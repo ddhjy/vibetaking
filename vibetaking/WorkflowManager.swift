@@ -190,7 +190,7 @@ class WorkflowManager {
 
     func selectWorkflow(_ id: UUID) {
         selectedWorkflowId = id
-        UserDefaults.standard.set(id.uuidString, forKey: selectedWorkflowIdKey)
+        persistSelectedWorkflowId()
     }
     
     func canCloseWorkflow(_ id: UUID) -> Bool {
@@ -424,6 +424,41 @@ class WorkflowManager {
             UserDefaults.standard.set(data, forKey: workflowsStorageKey)
         }
     }
+
+    func exportConfiguration() -> AppWorkflowConfiguration {
+        AppWorkflowConfiguration(
+            selectedWorkflowId: selectedWorkflowId,
+            items: workflows
+        )
+    }
+
+    func applyConfiguration(_ configuration: AppWorkflowConfiguration) throws {
+        guard !configuration.items.isEmpty else {
+            throw AppConfigurationImportError.emptyWorkflows
+        }
+
+        workflows = configuration.items
+        for i in workflows.indices {
+            if workflows[i].kind == .autoPasteSync {
+                workflows[i].nodes = []
+            }
+            normalizeNodes(&workflows[i].nodes)
+        }
+
+        ensureAutoPasteSyncWorkflowExists()
+        if let selectedWorkflowId = configuration.selectedWorkflowId,
+           workflows.contains(where: { $0.id == selectedWorkflowId }) {
+            self.selectedWorkflowId = selectedWorkflowId
+        } else {
+            selectedWorkflowId = workflows.first?.id
+        }
+
+        normalizeAutoPasteSyncState()
+        ensureOpenWorkflowExists()
+        saveWorkflows()
+        persistSelectedWorkflowId()
+        notifyAutoPasteSyncWorkflowChanged()
+    }
     
     private func normalizeNodes(_ nodes: inout [WorkflowNode]) {
     }
@@ -578,6 +613,14 @@ class WorkflowManager {
     private func notifyAutoPasteSyncWorkflowChanged() {
         Task { @MainActor in
             AutoPasteSyncManager.shared.settingsDidChange()
+        }
+    }
+
+    private func persistSelectedWorkflowId() {
+        if let selectedWorkflowId {
+            UserDefaults.standard.set(selectedWorkflowId.uuidString, forKey: selectedWorkflowIdKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: selectedWorkflowIdKey)
         }
     }
 
