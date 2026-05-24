@@ -394,14 +394,7 @@ class HistoryManager {
     }
 
     nonisolated private static func resolveStorageURL(using fileManager: FileManager) -> URL {
-        if let containerURL = fileManager.url(forUbiquityContainerIdentifier: nil) {
-            let documentsURL = containerURL.appendingPathComponent("Documents")
-            
-            if !fileManager.fileExists(atPath: documentsURL.path) {
-                try? fileManager.createDirectory(at: documentsURL, withIntermediateDirectories: true)
-            }
-            
-            print("Using iCloud storage: \(documentsURL.path)")
+        if let documentsURL = iCloudDocumentsURL(using: fileManager) {
             return documentsURL
         }
         
@@ -413,6 +406,32 @@ class HistoryManager {
         
         print("Using local storage: \(localURL.path)")
         return localURL
+    }
+
+    nonisolated private static func iCloudDocumentsURL(using fileManager: FileManager) -> URL? {
+        let containerIdentifier = "iCloud.cn.1pointech.vibetaking"
+
+        guard fileManager.ubiquityIdentityToken != nil else {
+            print("iCloud unavailable: no signed-in iCloud account or iCloud Drive is disabled")
+            return nil
+        }
+
+        guard let containerURL = fileManager.url(forUbiquityContainerIdentifier: containerIdentifier) else {
+            print("iCloud container unavailable: \(containerIdentifier)")
+            return nil
+        }
+
+        let documentsURL = containerURL.appendingPathComponent("Documents", isDirectory: true)
+
+        do {
+            try fileManager.createDirectory(at: documentsURL, withIntermediateDirectories: true)
+        } catch {
+            print("Failed to create iCloud Documents directory: \(error)")
+            return nil
+        }
+
+        print("Using iCloud storage: \(documentsURL.path)")
+        return documentsURL
     }
     
     private func generateFileName(for date: Date) -> String {

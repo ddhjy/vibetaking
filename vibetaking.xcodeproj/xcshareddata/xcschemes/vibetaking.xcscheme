@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "0C7A28212F1403B6007D8C71"
-               BuildableName = "fifteen.app"
-               BlueprintName = "fifteen"
-               ReferencedContainer = "container:fifteen.xcodeproj">
+               BuildableName = "vibetaking.app"
+               BlueprintName = "vibetaking"
+               ReferencedContainer = "container:vibetaking.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "0C7A28212F1403B6007D8C71"
-            BuildableName = "fifteen.app"
-            BlueprintName = "fifteen"
-            ReferencedContainer = "container:fifteen.xcodeproj">
+            BuildableName = "vibetaking.app"
+            BlueprintName = "vibetaking"
+            ReferencedContainer = "container:vibetaking.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -62,9 +62,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "0C7A28212F1403B6007D8C71"
-            BuildableName = "fifteen.app"
-            BlueprintName = "fifteen"
-            ReferencedContainer = "container:fifteen.xcodeproj">
+            BuildableName = "vibetaking.app"
+            BlueprintName = "vibetaking"
+            ReferencedContainer = "container:vibetaking.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

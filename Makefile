@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
-PROJECT ?= fifteen.xcodeproj
-SCHEME ?= fifteen
+PROJECT ?= vibetaking.xcodeproj
+SCHEME ?= vibetaking
 CONFIGURATION ?= Debug
 DERIVED_DATA_PATH ?= .build/DerivedData
 APP_NAME ?= $(SCHEME)

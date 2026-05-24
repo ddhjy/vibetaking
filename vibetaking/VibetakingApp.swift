@@ -3,7 +3,7 @@ import Network
 import SwiftUI
 
 @main
-struct fifteenApp: App {
+struct VibetakingApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -28,7 +28,7 @@ final class AutoPasteSyncManager {
     static let shared = AutoPasteSyncManager()
 
     private let callbackPort: UInt16 = 7789
-    private let controlServer = FifteenControlServer()
+    private let controlServer = VibetakingControlServer()
 
     private var isSceneActive = false
     private var lastActiveTargets: Set<SyncTarget> = []
@@ -257,10 +257,10 @@ nonisolated private struct DraftPayload: Encodable, Sendable {
     let callbackPort: UInt16
 }
 
-private final class FifteenControlServer {
+private final class VibetakingControlServer {
     var onClearDraft: (() -> Void)?
 
-    private let queue = DispatchQueue(label: "cn.onepointech.fifteen.controlserver")
+    private let queue = DispatchQueue(label: "cn.1pointech.vibetaking.controlserver")
     private var listener: NWListener?
 
     func start(port: UInt16) {
@@ -273,13 +273,13 @@ private final class FifteenControlServer {
             }
             listener.stateUpdateHandler = { state in
                 if case .failed(let error) = state {
-                    print("Fifteen control server failed: \(error.localizedDescription)")
+                    print("Vibetaking control server failed: \(error.localizedDescription)")
                 }
             }
             self.listener = listener
             listener.start(queue: queue)
         } catch {
-            print("Failed to start Fifteen control server: \(error.localizedDescription)")
+            print("Failed to start Vibetaking control server: \(error.localizedDescription)")
         }
     }
 

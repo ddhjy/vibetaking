@@ -7,26 +7,26 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		0C7A28222F1403B6007D8C71 /* fifteen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fifteen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0C7A28222F1403B6007D8C71 /* vibetaking.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = vibetaking.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		0C055B182F1516DD00233513 /* Exceptions for "fifteen" folder in "fifteen" target */ = {
+		0C055B182F1516DD00233513 /* Exceptions for "vibetaking" folder in "vibetaking" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = 0C7A28212F1403B6007D8C71 /* fifteen */;
+			target = 0C7A28212F1403B6007D8C71 /* vibetaking */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		0C7A28242F1403B6007D8C71 /* fifteen */ = {
+		0C7A28242F1403B6007D8C71 /* vibetaking */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				0C055B182F1516DD00233513 /* Exceptions for "fifteen" folder in "fifteen" target */,
+				0C055B182F1516DD00233513 /* Exceptions for "vibetaking" folder in "vibetaking" target */,
 			);
-			path = fifteen;
+			path = vibetaking;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -45,7 +45,7 @@
 		0C7A28192F1403B6007D8C71 = {
 			isa = PBXGroup;
 			children = (
-				0C7A28242F1403B6007D8C71 /* fifteen */,
+				0C7A28242F1403B6007D8C71 /* vibetaking */,
 				0C7A28232F1403B6007D8C71 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -53,7 +53,7 @@
 		0C7A28232F1403B6007D8C71 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				0C7A28222F1403B6007D8C71 /* fifteen.app */,
+				0C7A28222F1403B6007D8C71 /* vibetaking.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -61,9 +61,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		0C7A28212F1403B6007D8C71 /* fifteen */ = {
+		0C7A28212F1403B6007D8C71 /* vibetaking */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 0C7A282D2F1403B8007D8C71 /* Build configuration list for PBXNativeTarget "fifteen" */;
+			buildConfigurationList = 0C7A282D2F1403B8007D8C71 /* Build configuration list for PBXNativeTarget "vibetaking" */;
 			buildPhases = (
 				0C7A281E2F1403B6007D8C71 /* Sources */,
 				0C7A281F2F1403B6007D8C71 /* Frameworks */,
@@ -74,13 +74,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				0C7A28242F1403B6007D8C71 /* fifteen */,
+				0C7A28242F1403B6007D8C71 /* vibetaking */,
 			);
-			name = fifteen;
+			name = vibetaking;
 			packageProductDependencies = (
 			);
-			productName = fifteen;
-			productReference = 0C7A28222F1403B6007D8C71 /* fifteen.app */;
+			productName = vibetaking;
+			productReference = 0C7A28222F1403B6007D8C71 /* vibetaking.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -98,7 +98,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 0C7A281D2F1403B6007D8C71 /* Build configuration list for PBXProject "fifteen" */;
+			buildConfigurationList = 0C7A281D2F1403B6007D8C71 /* Build configuration list for PBXProject "vibetaking" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -112,7 +112,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				0C7A28212F1403B6007D8C71 /* fifteen */,
+				0C7A28212F1403B6007D8C71 /* vibetaking */,
 			);
 		};
 /* End PBXProject section */
@@ -261,12 +261,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = vibetaking/vibetaking.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6KH2T566FP;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = fifteen/Info.plist;
+				INFOPLIST_FILE = vibetaking/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "随心记";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -278,7 +279,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = onepointech.cn.fifteen;
+				PRODUCT_BUNDLE_IDENTIFIER = cn.1pointech.vibetaking;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -294,12 +295,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = vibetaking/vibetaking.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6KH2T566FP;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = fifteen/Info.plist;
+				INFOPLIST_FILE = vibetaking/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "随心记";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -311,7 +313,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = onepointech.cn.fifteen;
+				PRODUCT_BUNDLE_IDENTIFIER = cn.1pointech.vibetaking;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -326,7 +328,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		0C7A281D2F1403B6007D8C71 /* Build configuration list for PBXProject "fifteen" */ = {
+		0C7A281D2F1403B6007D8C71 /* Build configuration list for PBXProject "vibetaking" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0C7A282B2F1403B8007D8C71 /* Debug */,
@@ -335,7 +337,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		0C7A282D2F1403B8007D8C71 /* Build configuration list for PBXNativeTarget "fifteen" */ = {
+		0C7A282D2F1403B8007D8C71 /* Build configuration list for PBXNativeTarget "vibetaking" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0C7A282E2F1403B8007D8C71 /* Debug */,
