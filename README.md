@@ -2,7 +2,7 @@
 
 一款基于 SwiftUI 的 iOS 速记应用，主打“打开即写”：启动后自动聚焦输入区、唤起键盘，适合键盘输入和系统听写。草稿实时保存，记录以 Markdown 文件落盘，并可通过 iCloud Drive 在设备间同步。
 
-应用把 AI 处理、标签管理、剪贴板、HTTP 发送、保存记录和 AutoPaste 局域网同步收敛到可配置的 Workflow 中，让一段临时输入可以一键变成“润色后的文本”“发往局域网的草稿”或“带标签的历史记录”。
+应用把 AI 处理、标签管理、剪贴板、HTTP 发送和保存记录收敛到可配置的 Workflow 中，让一段临时输入可以一键变成“润色后的文本”“复制到剪贴板的片段”或“带标签的历史记录”。
 
 ## 演示
 
@@ -11,8 +11,7 @@
 ## 核心能力
 
 - **打开即写**：进入主页后自动聚焦全屏输入框；草稿写入 `_draft.md`，退出或切走应用也不会丢。
-- **Workflow 流水线**：手动 Workflow 可按顺序组合 AI 处理、复制、HTTP 发送、保存记录等节点。
-- **AutoPaste 同步**：开关型 Workflow 可把当前草稿实时推送到局域网目标，并接收远端清空回调。
+- **Workflow 流水线**：默认 Workflow 可按顺序组合 AI 处理、复制、HTTP 发送、保存记录等节点。
 - **AI 处理**：接入兼容 OpenAI `/v1/responses` 与 `/v1/models` 的网关，支持自定义提示词和模型选择。
 - **标签推荐**：基于候选标签、历史打标样例、文本相似度和时间衰减为当前内容推荐标签。
 - **历史管理**：支持全文搜索、多标签筛选、随机浏览、批量复制、批量打标、统计、导入和导出。
@@ -22,14 +21,9 @@
 
 ## Workflow
 
-Workflow 分为两类：
+默认 Workflow 是主页按钮触发的手动流水线。执行时会读取当前草稿，并按从上到下的顺序运行所有启用节点。
 
-| 类型 | 用途 |
-| --- | --- |
-| `manual` | 主页按钮触发，按节点顺序处理当前草稿 |
-| `autoPasteSync` | 主页按钮切换开关，负责 AutoPaste 实时同步 |
-
-手动 Workflow 支持的节点：
+支持的节点：
 
 | 节点 | 行为 |
 | --- | --- |
@@ -37,17 +31,6 @@ Workflow 分为两类：
 | `copy` | 将当前文本写入系统剪贴板 |
 | `http_post` | 以 `text/plain; charset=utf-8` POST 到 `http://host:port` |
 | `save` | 将最终文本保存为历史记录，并继承当前草稿标签 |
-
-AutoPaste 同步使用单独协议：开启后，应用在前台会向 `http://host:port/draft` 发送 JSON：
-
-```json
-{
-  "text": "当前草稿",
-  "callbackPort": 7789
-}
-```
-
-应用同时在本机 `7789` 端口启动控制服务，接收 `POST /draft/clear` 后清空当前草稿。同一时间只允许一个 AutoPaste Workflow 处于开启状态。
 
 ## 存储
 
@@ -116,10 +99,10 @@ make clean
 
 | 路径 | 职责 |
 | --- | --- |
-| `vibetaking/VibetakingApp.swift` | App 入口、场景生命周期、AutoPaste 同步管理与本地控制服务 |
+| `vibetaking/VibetakingApp.swift` | App 入口、场景生命周期与本地控制服务 |
 | `vibetaking/ContentView.swift` | 打开即写主页、底部工具栏、Workflow 触发和草稿交互 |
 | `vibetaking/WorkflowManager.swift` | Workflow 数据模型、持久化、迁移、节点执行 |
-| `vibetaking/WorkflowConfigView.swift` | Workflow 列表、节点编辑、图标选择、AutoPaste 配置 |
+| `vibetaking/WorkflowConfigView.swift` | Workflow 列表、节点编辑和图标选择 |
 | `vibetaking/AIService.swift` | 模型列表、AI 文本处理、AI 标签推荐 |
 | `vibetaking/HistoryManager.swift` | Markdown 草稿和历史记录的读写、导入、导出、标签更新 |
 | `vibetaking/HistoryView.swift` | 历史列表、搜索、筛选、统计、批量操作 |
