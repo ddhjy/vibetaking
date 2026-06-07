@@ -1,103 +1,144 @@
-# vibetaking · 语音输入
+# vibetaking · 随心记
 
-一款基于 SwiftUI 的 iOS 速记应用，主打"打开即写"的全屏输入体验，并把 AI 处理、标签管理、本地网络同步等能力收敛到一条可自定义的 Workflow 流水线中。所有记录以 Markdown 文件形式存储，并可通过 iCloud Drive 在设备间自动同步。
+一款基于 SwiftUI 的 iOS 速记应用，主打“打开即写”：启动后自动聚焦输入区、唤起键盘，适合键盘输入和系统听写。草稿实时保存，记录以 Markdown 文件落盘，并可通过 iCloud Drive 在设备间同步。
+
+应用把 AI 处理、标签管理、剪贴板、HTTP 发送、保存记录和 AutoPaste 局域网同步收敛到可配置的 Workflow 中，让一段临时输入可以一键变成“润色后的文本”“发往局域网的草稿”或“带标签的历史记录”。
 
 ## 演示
 
 ![应用演示](docs/demo.png)
 
-## 功能特性
+## 核心能力
 
-- **极速捕捉**：应用启动后自动聚焦输入框、唤起键盘，无需额外点击即可开始记录；草稿实时保存，关闭应用也不丢失。
-- **AI 文本处理**：接入兼容 OpenAI `responses` 接口的网关，可对当前文本执行润色、改写、总结等自定义提示词处理。
-- **智能标签推荐**：结合候选标签与历史打标样例，基于文本相似度与时间衰减为当前内容推荐最相关的标签。
-- **可视化 Workflow**：将"AI 处理 → 复制 → HTTP 发送 → 保存记录"等节点自由编排为一条流水线，一键执行。
-- **AutoPaste 局域网同步**：开启后，草稿会实时同步到局域网内的 AutoPaste 目标主机，并接收回调以清空草稿。
-- **历史记录与搜索**：记录按 Markdown 文件归档，支持全文搜索、按标签筛选、导入与导出。
-- **iCloud 存储**：记录优先写入 iCloud Drive 容器，跨设备自动同步；无 iCloud 时回落到本地沙盒。
-- **配置导入导出**：AI 配置与 Workflow 可打包为 JSON 文件，便于备份与迁移。
-- **安全的密钥存储**：AI 密钥保存在系统 Keychain 中，不写入 `UserDefaults`。
+- **打开即写**：进入主页后自动聚焦全屏输入框；草稿写入 `_draft.md`，退出或切走应用也不会丢。
+- **Workflow 流水线**：手动 Workflow 可按顺序组合 AI 处理、复制、HTTP 发送、保存记录等节点。
+- **AutoPaste 同步**：开关型 Workflow 可把当前草稿实时推送到局域网目标，并接收远端清空回调。
+- **AI 处理**：接入兼容 OpenAI `/v1/responses` 与 `/v1/models` 的网关，支持自定义提示词和模型选择。
+- **标签推荐**：基于候选标签、历史打标样例、文本相似度和时间衰减为当前内容推荐标签。
+- **历史管理**：支持全文搜索、多标签筛选、随机浏览、批量复制、批量打标、统计、导入和导出。
+- **Markdown 存储**：记录带 front matter，优先写入 iCloud Drive 容器，无 iCloud 时回落到本地沙盒。
+- **配置迁移**：AI 配置与 Workflow 可导出为 JSON，也可导入覆盖当前配置。
+- **密钥保护**：AI API Key 保存在系统 Keychain，历史配置会从 `UserDefaults` 迁移到 Keychain。
 
-## 技术栈
+## Workflow
 
-- **SwiftUI** + `@Observable`（Observation 框架）
-- **Network.framework**（`NWListener` / `NWConnection`，用于 AutoPaste 控制服务）
-- **Keychain**（密钥安全存储）
-- **iCloud Drive / CloudDocuments**（Markdown 记录同步）
-- **iOS 26.0+**
+Workflow 分为两类：
 
-## 架构概览
-
-应用以单例形式组织核心服务，UI 层通过 `@Observable` 订阅状态变化：
-
-| 模块 | 职责 |
+| 类型 | 用途 |
 | --- | --- |
-| `VibetakingApp` / `AutoPasteSyncManager` | 应用入口；监听场景生命周期，驱动 AutoPaste 草稿同步与控制服务 |
-| `ContentView` | 全屏输入主界面、底部工具栏与 Workflow 触发逻辑 |
-| `WorkflowManager` | Workflow 与节点的增删改查、持久化，以及流水线执行 |
-| `AIService` | 模型列表拉取、文本处理与标签推荐 |
-| `HistoryManager` | 草稿与历史记录的读写，iCloud / 本地存储解析 |
-| `TagManager` | 标签缓存与最近使用标签管理 |
-| `SettingsManager` | AI 网关地址、模型、密钥配置 |
-| `AppConfigurationManager` | 配置打包导入 / 导出 |
+| `manual` | 主页按钮触发，按节点顺序处理当前草稿 |
+| `autoPasteSync` | 主页按钮切换开关，负责 AutoPaste 实时同步 |
 
-### Workflow 节点类型
+手动 Workflow 支持的节点：
 
-`WorkflowManager` 执行时会按顺序处理启用的节点：
+| 节点 | 行为 |
+| --- | --- |
+| `ai_process` | 用节点内提示词调用 AI，返回结果成为后续节点输入 |
+| `copy` | 将当前文本写入系统剪贴板 |
+| `http_post` | 以 `text/plain; charset=utf-8` POST 到 `http://host:port` |
+| `save` | 将最终文本保存为历史记录，并继承当前草稿标签 |
 
-- `ai_process` — 以配置的提示词调用 AI 处理当前文本
-- `copy` — 将当前文本复制到剪贴板
-- `http_post` — 将文本以 `text/plain` POST 到指定主机和端口
-- `save` — 将结果保存为历史记录
+AutoPaste 同步使用单独协议：开启后，应用在前台会向 `http://host:port/draft` 发送 JSON：
 
-Workflow 分为两类：可执行的 `manual`（手动流水线）与开关型的 `autoPasteSync`（AutoPaste 同步）。
+```json
+{
+  "text": "当前草稿",
+  "callbackPort": 7789
+}
+```
+
+应用同时在本机 `7789` 端口启动控制服务，接收 `POST /draft/clear` 后清空当前草稿。同一时间只允许一个 AutoPaste Workflow 处于开启状态。
+
+## 存储
+
+记录文件是普通 Markdown：
+
+```markdown
+---
+created: 2026-06-07-1530-00
+description: "记录摘要"
+tags:
+  - "标签"
+---
+
+正文内容
+```
+
+- 历史记录文件名基于创建时间生成，格式为 `yyyy-MM-dd-HHmm-ss.md`。
+- 当前草稿固定保存为 `_draft.md`。
+- 默认存储位置是 iCloud 容器 `iCloud.cn.1pointech.vibetaking` 的 `Documents` 目录。
+- iCloud 不可用时，记录写入应用沙盒 `Documents/Records`。
+- 导入支持 `.md`、`.markdown`、文件夹和 `.zip`；导出会打包为 ZIP。
+
+## AI 配置
+
+在应用「设置」中配置：
+
+| 配置项 | 默认值 / 行为 |
+| --- | --- |
+| API Key | 写入 Keychain |
+| API 前缀 | `https://api.infingrow.asia/v1`，会自动补齐 `/v1` |
+| 模型 | `gpt-5.5`，也可从 `/v1/models` 拉取并选择 |
+
+模型列表会过滤图片模型；文本处理调用 `/v1/responses`，请求包含 `instructions`、`input`、`temperature` 和 `max_output_tokens`。
 
 ## 开发
 
-使用 Xcode 打开 `vibetaking.xcodeproj` 即可开始开发。
+要求：
 
-也可以直接用 `make` 编译、安装，并在已连接的真机上自动打开 App：
+- 支持 iOS 26.0+ 的 Xcode
+- 已配置可用的 Apple Developer Team
+- 如需 iCloud 同步，账号需具备 `iCloud.cn.1pointech.vibetaking` 容器权限
+
+打开工程：
 
 ```bash
+open vibetaking.xcodeproj
+```
+
+常用 Makefile 命令：
+
+```bash
+make help
+make build
 make install
-```
-
-如果连接了多台设备，可以显式指定设备名：
-
-```bash
 make install DEVICE_NAME="KAI"
-```
-
-查看当前可用真机列表：
-
-```bash
 make devices
+make simulators
+make install-simulator
+make install-simulator SIMULATOR_NAME="iPhone 17"
+make clean
 ```
 
-## 配置说明
+`make install` 会构建、安装并启动到第一台已配对真机；`make install-simulator` 会优先使用指定模拟器、已启动模拟器或第一台可用 iPhone 模拟器。
 
-### AI 服务
+## 代码结构
 
-在应用「设置」中填写以下信息：
+| 路径 | 职责 |
+| --- | --- |
+| `vibetaking/VibetakingApp.swift` | App 入口、场景生命周期、AutoPaste 同步管理与本地控制服务 |
+| `vibetaking/ContentView.swift` | 打开即写主页、底部工具栏、Workflow 触发和草稿交互 |
+| `vibetaking/WorkflowManager.swift` | Workflow 数据模型、持久化、迁移、节点执行 |
+| `vibetaking/WorkflowConfigView.swift` | Workflow 列表、节点编辑、图标选择、AutoPaste 配置 |
+| `vibetaking/AIService.swift` | 模型列表、AI 文本处理、AI 标签推荐 |
+| `vibetaking/HistoryManager.swift` | Markdown 草稿和历史记录的读写、导入、导出、标签更新 |
+| `vibetaking/HistoryView.swift` | 历史列表、搜索、筛选、统计、批量操作 |
+| `vibetaking/TagPickerView.swift` | 标签选择、创建、重命名和 AI 推荐展示 |
+| `vibetaking/SettingsView.swift` | AI 设置、模型刷新、配置导入导出，内含 `SettingsManager` |
+| `vibetaking/AppConfigurationManager.swift` | JSON 配置包的编码、解码与应用 |
+| `vibetaking/KeychainHelper.swift` | Keychain 读写封装 |
+| `vibetaking/Info.plist` | 本地网络、文档浏览器、Markdown 文档类型、iCloud 容器声明 |
+| `vibetaking/vibetaking.entitlements` | iCloud Documents 权限 |
 
-- **API 密钥**：访问令牌，安全存储于 Keychain。
-- **网关地址**：默认 `https://api.infingrow.asia/v1`，地址会自动规范化为以 `/v1` 结尾。
-- **模型**：默认 `gpt-5.5`，可从网关返回的模型列表中选择。
+## 技术栈
 
-> AI 文本处理走兼容 OpenAI 的 `responses` 接口，模型列表走 `models` 接口。
-
-### AutoPaste 局域网同步
-
-- 在 Workflow 配置中填写 AutoPaste **主机地址**与**端口**（默认 `7788`）。
-- 开启同步后，草稿会在应用处于前台时实时推送到目标主机的 `/draft`。
-- 应用会在本地 `7789` 端口启动控制服务，接收目标主机的 `/draft/clear` 回调以清空当前草稿。
-- 该功能需要本地网络权限（已在 `Info.plist` 中声明 `NSLocalNetworkUsageDescription`）。
-
-### 存储
-
-- 记录以 `.md` 文件存储，文件名基于创建时间生成；草稿固定为 `_draft.md`。
-- 优先使用 iCloud 容器 `iCloud.cn.1pointech.vibetaking` 的 Documents 目录；未登录 iCloud 时回落到本地沙盒。
-- 支持以系统文档浏览器在原位打开 Markdown 文档（`LSSupportsOpeningDocumentsInPlace`）。
+- SwiftUI + Observation (`@Observable`)
+- UIKit bridge (`UITextView`) 用于稳定的全屏输入体验
+- Network.framework (`NWListener` / `NWConnection`) 用于本地控制服务
+- URLSession 用于 AI 和局域网 HTTP 请求
+- Keychain Services 用于密钥存储
+- iCloud Drive / CloudDocuments 用于 Markdown 文件同步
+- zlib 用于 ZIP 导入解析
 
 ## 许可证
 
