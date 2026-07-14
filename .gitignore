@@ -4,6 +4,7 @@ xcuserdata/
 # Xcode / Swift build artifacts
 .build/
 DerivedData/
+.asc/artifacts/
 
 # Local Codex environment state
 .codex/environments/

@@ -1,0 +1,7 @@
+{
+  "description": "随心记是一款为快速记录而设计的纯文本笔记应用。打开应用即可开始输入，草稿会自动保存，适合临时想法、会议要点、口述转文字后的整理，以及每天不断冒出来的小片段。\n\n记录以 Markdown 文件保存，可通过 iCloud Drive 在设备间同步。你可以为内容添加标签，在历史记录中搜索、筛选、随机回顾，也可以批量复制、导入或导出自己的资料。\n\n应用还提供可配置的 Workflow：一键组合 AI 处理、复制到剪贴板、发送到局域网服务、保存历史记录等动作。AI API Key 保存在系统钥匙串中，模型和网关地址由你自行配置。\n\n核心特点：\n- 打开即写，减少进入记录状态前的操作\n- 草稿实时保存，不怕切走应用后丢失\n- Markdown 文件存储，数据结构清晰可迁移\n- iCloud Drive 同步，支持本地沙盒回退\n- 标签、搜索、筛选和批量管理\n- 可配置 Workflow，适配自己的文本处理习惯",
+  "keywords": "速记,笔记,Markdown,标签,灵感,草稿,记录,iCloud,AI,工作流",
+  "promotionalText": "打开即写，把灵感、草稿和处理流程收进一个轻量的纯文本工作台。",
+  "supportUrl": "https://github.com/ddhjy/vibetaking/blob/main/docs/support.md",
+  "whatsNew": "随心记 1.0 首次发布：支持打开即写、草稿自动保存、Markdown 历史记录、标签管理、iCloud Drive 同步、AI 文本处理和可配置 Workflow。"
+}
