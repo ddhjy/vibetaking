@@ -7,7 +7,7 @@
 
 ## 编译步骤
 
-在项目根目录下执行：
+在 `apps/macos/` 下执行（也可在仓库根目录执行 `make mac-release`）：
 
 ```bash
 make release
@@ -22,7 +22,6 @@ dist/release/VibeTaking-<version>.zip
 如需仅使用原生 xcodebuild，也可以执行：
 
 ```bash
-cd VibeTaking
 xcodebuild -project VibeTaking.xcodeproj -scheme VibeTaking -configuration Release build
 ```
 

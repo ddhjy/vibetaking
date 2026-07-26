@@ -19,7 +19,7 @@
 - Release archive 已生成：`.asc/artifacts/vibetaking.xcarchive`
 - App Store export options 已生成：`.asc/ExportOptions-AppStore.plist`
 - 中文 App Store 元数据已生成并通过离线校验：`metadata/`
-- 隐私政策和支持文档草稿已生成：`docs/privacy-policy.md`、`docs/support.md`
+- 隐私政策和支持文档草稿已生成：`../../docs/privacy-policy.md`、`../../docs/support.md`（保留在仓库根 `docs/`，App Store Connect 登记的公开链接指向该路径）
 - App Store 候选截图已生成：`screenshots/appstore/zh-Hans/`
 
 ## 当前阻塞
@@ -28,9 +28,11 @@
 2. App Store Connect 中还没有 `cn.1pointech.vibetaking` 的 app 记录。
 3. 需要确认隐私政策和支持链接已公开可访问。
 4. 需要在 App Store Connect 填写 App Privacy、年龄分级、内容版权、价格/可用地区、审核联系人等审核项。
-5. 当前模拟器截图自动化卡在 CoreSimulator 启动/安装，已用 `docs/demo.png` 生成候选截图；正式提交前建议补一组真实 iPad 截图。
+5. 当前模拟器截图自动化卡在 CoreSimulator 启动/安装，已用 `../../docs/demo.png` 生成候选截图；正式提交前建议补一组真实 iPad 截图。
 
 ## 继续发布命令
+
+以下命令均在 `apps/ios/` 目录下执行。
 
 登录 `asc`：
 

@@ -1,6 +1,6 @@
-# 随心记 (VibeTaking)
+# 随心记 macOS 端 (VibeTaking)
 
-macOS 菜单栏应用，通过 HTTP 接口接收文本并自动粘贴到当前活跃的输入框中。
+macOS 菜单栏应用，通过 HTTP 接口接收文本并自动粘贴到当前活跃的输入框中。iOS 端见 [apps/ios/README.md](../ios/README.md)。
 
 ## 使用场景
 
@@ -13,7 +13,7 @@ macOS 菜单栏应用，通过 HTTP 接口接收文本并自动粘贴到当前�
 ### 使用 Xcode
 
 ```bash
-open VibeTaking/VibeTaking.xcodeproj
+open apps/macos/VibeTaking.xcodeproj
 ```
 
 在 Xcode 中选择 **Product → Build**（⌘B），生成的应用位于 DerivedData 目录。
@@ -21,7 +21,7 @@ open VibeTaking/VibeTaking.xcodeproj
 ### 使用命令行
 
 ```bash
-cd VibeTaking
+cd apps/macos
 xcodebuild -project VibeTaking.xcodeproj -scheme VibeTaking -configuration Release build
 ```
 
@@ -35,7 +35,7 @@ cp -R ~/Library/Developer/Xcode/DerivedData/VibeTaking-*/Build/Products/Release/
 
 ### 使用 Make（推荐）
 
-在项目根目录执行：
+在 `apps/macos/` 下执行（在仓库根目录用 `make mac-release` 等价）：
 
 ```bash
 make release
@@ -114,7 +114,9 @@ curl -X POST http://localhost:7788 \
 ## 项目结构
 
 ```
-VibeTaking/
+apps/macos/
+├── Makefile
+├── docs/
 ├── VibeTaking.xcodeproj/
 │   └── project.pbxproj
 └── VibeTaking/
