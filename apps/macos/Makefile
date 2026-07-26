@@ -1,10 +1,9 @@
 APP_NAME := VibeTaking
-PROJECT_DIR := VibeTaking
-PROJECT_FILE := $(PROJECT_DIR)/VibeTaking.xcodeproj
+PROJECT_FILE := VibeTaking.xcodeproj
 SCHEME := $(APP_NAME)
 CONFIGURATION := Release
-INFO_PLIST := $(PROJECT_DIR)/VibeTaking/Resources/Info.plist
-ENTITLEMENTS_FILE := $(PROJECT_DIR)/VibeTaking/Resources/VibeTaking.entitlements
+INFO_PLIST := VibeTaking/Resources/Info.plist
+ENTITLEMENTS_FILE := VibeTaking/Resources/VibeTaking.entitlements
 
 DERIVED_DATA := build/derived
 BUILD_APP_PATH := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/$(APP_NAME).app
