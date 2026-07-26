@@ -149,4 +149,6 @@ make clean
 - [隐私政策](docs/privacy-policy.md)
 - [支持](docs/support.md)
 
-MIT License
+GPL-3.0 License（见 [LICENSE](LICENSE)）。
+
+本应用的 Agent 能力（多轮工具调用、Skills、持久记忆、日历/提醒/剪贴板设备集成）移植自 GPL-3.0 开源项目 [OpenMinis](https://github.com/OpenMinis/OpenMinis)，详见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。因引入 GPL 代码，本项目整体按 GPL-3.0 授权；本仓库即完整对应源码。注意：向 App Store 公开分发含第三方 GPLv3 代码的应用存在合规争议，公开上架前需自行评估。

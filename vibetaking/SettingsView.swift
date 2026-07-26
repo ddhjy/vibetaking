@@ -119,6 +119,8 @@ class SettingsManager {
 
 struct SettingsView: View {
     @State private var settingsManager = SettingsManager.shared
+    @State private var memoryStore = AgentMemoryStore.shared
+    @State private var skillStore = SkillStore.shared
     @State private var models: [AIModel] = []
     @State private var isLoadingModels = false
     @State private var modelLoadError: String?
@@ -230,6 +232,29 @@ struct SettingsView: View {
                     Text("模型")
                 } footer: {
                     Text("模型列表来自 /v1/models，并会过滤掉图片模型。")
+                }
+
+                Section {
+                    Toggle("跨会话记忆", isOn: Bindable(memoryStore).isEnabled)
+
+                    NavigationLink {
+                        AgentSkillsSettingsView()
+                    } label: {
+                        HStack {
+                            Text("Skills")
+                            Spacer()
+                            Text("\(skillStore.skills.count)")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    NavigationLink("设备权限") {
+                        OffloadPermissionSettingsView()
+                    }
+                } header: {
+                    Text("AI 助手")
+                } footer: {
+                    Text("记忆保存在记录目录 _agent/memory/，Skills 放在 _skills/<名称>/SKILL.md，均随 iCloud 同步。设备权限控制 AI 对日历、提醒事项和剪贴板的访问。")
                 }
 
                 Section {
@@ -397,6 +422,58 @@ struct SettingsView: View {
         } catch {
             models = []
             modelLoadError = error.localizedDescription
+        }
+    }
+}
+
+struct AgentSkillsSettingsView: View {
+    @State private var store = SkillStore.shared
+
+    var body: some View {
+        List {
+            if store.skills.isEmpty {
+                Section {
+                    Text("还没有 Skill。在记录目录下创建 _skills/<名称>/SKILL.md（带 YAML frontmatter 的 name 与 description），AI 助手会按需加载。兼容为 Claude / Codex 编写的 skill。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                ForEach(store.skills) { skill in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(isOn: Binding(
+                            get: { skill.isEnabled },
+                            set: { store.setEnabled($0, for: skill.id) }
+                        )) {
+                            Text(skill.name)
+                                .font(.body)
+                        }
+                        if !skill.description.isEmpty {
+                            Text(skill.description)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
+                        if skill.useCount > 0 {
+                            Text("已使用 \(Int(skill.useCount)) 次")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+        .navigationTitle("Skills")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("刷新", systemImage: "arrow.clockwise") {
+                    store.reload()
+                }
+            }
+        }
+        .onAppear {
+            store.loadIfNeeded()
         }
     }
 }

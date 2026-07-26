@@ -723,6 +723,10 @@ struct NodeRowView: View {
             return prompt
         }
 
+        if node.type == .agentProcess, let prompt = node.config.agentPrompt, !prompt.isEmpty {
+            return prompt
+        }
+
         if node.type == .httpPost {
             let host = node.config.httpHost ?? "localhost"
             let port = node.config.httpPort ?? 9999
@@ -778,6 +782,7 @@ struct EditNodeSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var workflowManager = WorkflowManager.shared
     @State private var aiPrompt: String = ""
+    @State private var agentPrompt: String = ""
     @State private var httpHost: String = ""
     @State private var httpPort: String = ""
 
@@ -788,6 +793,17 @@ struct EditNodeSheet: View {
                     Section("提示词") {
                         TextField("输入 AI 提示词", text: $aiPrompt, axis: .vertical)
                             .lineLimit(5...)
+                    }
+                }
+
+                if node.type == .agentProcess {
+                    Section {
+                        TextField("输入 Agent 任务指令", text: $agentPrompt, axis: .vertical)
+                            .lineLimit(5...)
+                    } header: {
+                        Text("任务指令")
+                    } footer: {
+                        Text("Agent 可多轮调用工具（搜索/读取/保存笔记、打标签、记忆、日历、提醒事项、剪贴板）完成任务，最终文本传给下一节点。")
                     }
                 }
 
@@ -822,6 +838,7 @@ struct EditNodeSheet: View {
             }
             .onAppear {
                 aiPrompt = node.config.aiPrompt ?? ""
+                agentPrompt = node.config.agentPrompt ?? ""
                 httpHost = node.config.httpHost ?? "localhost"
                 httpPort = "\(node.config.httpPort ?? 9999)"
             }
@@ -832,6 +849,7 @@ struct EditNodeSheet: View {
     private func saveChanges() {
         var updated = node
         updated.config.aiPrompt = aiPrompt.isEmpty ? nil : aiPrompt
+        updated.config.agentPrompt = agentPrompt.isEmpty ? nil : agentPrompt
         updated.config.httpHost = httpHost.isEmpty ? nil : httpHost
         updated.config.httpPort = Int(httpPort)
         workflowManager.updateNode(updated)

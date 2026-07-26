@@ -388,6 +388,10 @@ class HistoryManager {
         _cachedStorageURL = url
         return url
     }
+
+    /// 记录存储根目录（iCloud Documents 或本地回落），供 Agent 文件工具
+    /// 作为沙箱作用域使用。
+    var agentStorageRootURL: URL { storageURL }
     
     private func resolveStorageURL() -> URL {
         Self.resolveStorageURL(using: fileManager)

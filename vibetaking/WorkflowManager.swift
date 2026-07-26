@@ -8,6 +8,7 @@ enum WorkflowKind: String, Codable, Equatable {
 
 enum WorkflowNodeType: String, Codable, CaseIterable {
     case aiProcess = "ai_process"
+    case agentProcess = "agent"
     case copyToClipboard = "copy"
     case save = "save"
     case httpPost = "http_post"
@@ -15,6 +16,7 @@ enum WorkflowNodeType: String, Codable, CaseIterable {
     var displayName: String {
         switch self {
         case .aiProcess: "AI 处理"
+        case .agentProcess: "Agent 处理"
         case .copyToClipboard: "复制"
         case .save: "保存记录"
         case .httpPost: "HTTP 发送"
@@ -24,6 +26,7 @@ enum WorkflowNodeType: String, Codable, CaseIterable {
     var icon: String {
         switch self {
         case .aiProcess: "sparkles"
+        case .agentProcess: "brain.head.profile"
         case .copyToClipboard: "doc.on.doc"
         case .save: "square.and.arrow.down"
         case .httpPost: "paperplane.circle"
@@ -40,6 +43,8 @@ struct WorkflowNode: Identifiable, Codable, Equatable {
     
     struct NodeConfig: Codable, Equatable {
         var aiPrompt: String?
+        /// Agent 节点的任务指令（可用全部工具的多轮处理）。
+        var agentPrompt: String?
         var httpHost: String?
         var httpPort: Int?
     }
@@ -501,6 +506,11 @@ class WorkflowManager {
                 if let prompt = node.config.aiPrompt, !prompt.isEmpty {
                     currentText = try await AIService.shared.process(text: currentText, prompt: prompt)
                 }
+
+            case .agentProcess:
+                if let prompt = node.config.agentPrompt, !prompt.isEmpty {
+                    currentText = try await executeAgentNode(prompt: prompt, input: currentText)
+                }
                 
             case .httpPost:
                 let host = node.config.httpHost ?? "localhost"
@@ -537,6 +547,54 @@ class WorkflowManager {
             shouldSave: shouldSave,
             didCopyToClipboard: didCopy
         )
+    }
+
+    /// Agent 节点：把草稿交给多轮工具循环处理，返回最终文本。
+    /// 复用聊天页的完整工具集（笔记 / 文件 / 记忆 / 设备）。
+    private func executeAgentNode(prompt: String, input: String) async throws -> String {
+        let settings = SettingsManager.shared
+        guard let token = settings.aiApiToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else {
+            throw LLMError.missingCredentials
+        }
+        let base = SettingsManager.normalizedAIBaseURLString(settings.aiBaseURLString)
+        let model = settings.aiModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let provider = OpenAIResponsesAgentProvider(
+            apiKey: token,
+            modelId: model.isEmpty ? SettingsManager.defaultAIModelID : model,
+            baseURLString: base
+        )
+        noff_set_storage_root(HistoryManager.shared.agentStorageRootURL.path)
+
+        let engine = AgentEngine(registry: AgentChatViewModel.makeDefaultRegistry())
+        let systemPrompt = AgentSystemPrompt.build(
+            memoryFragment: AgentToolkitExtras.memoryPromptFragment(),
+            skillsFragment: AgentToolkitExtras.skillsPromptFragment()
+        ) + "\n\n## Workflow mode\nYou are running inside a one-shot workflow pipeline. Complete the task with tools as needed, then output ONLY the final text result (it feeds the next pipeline node) — no preamble, no explanation."
+
+        let userText = """
+        任务指令：
+        \(prompt)
+
+        输入文本：
+        \(input)
+        """
+
+        let result = try await engine.run(
+            userText: userText,
+            systemPrompt: systemPrompt,
+            provider: provider
+        ) { _ in }
+
+        let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw NSError(
+                domain: "WorkflowManager",
+                code: -4,
+                userInfo: [NSLocalizedDescriptionKey: "Agent 未返回文本结果，请调整任务指令"]
+            )
+        }
+        return trimmed
     }
     
     private func ensureOpenWorkflowExists() {

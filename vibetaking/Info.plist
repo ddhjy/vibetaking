@@ -22,8 +22,16 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>AI 助手根据你的指令查询日程、检查忙闲并代你创建日历事件。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>AI 助手根据你的指令查询日程、检查忙闲并代你创建日历事件。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于把当前草稿实时同步到局域网中的 AutoPaste，并接收回调清空指令。</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>AI 助手根据你的指令查询和创建提醒事项。</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>AI 助手根据你的指令查询和创建提醒事项。</string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
 		<key>iCloud.cn.1pointech.vibetaking</key>

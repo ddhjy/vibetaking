@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var showHistory: Bool = false
+    @State private var showAgentChat: Bool = false
     @State private var historySearchText: String = ""
     @State private var showTagSelector: Bool = false
     @State private var showDebugView: Bool = false
@@ -56,6 +57,14 @@ struct ContentView: View {
                         .labelStyle(.iconOnly)
                 }
                 
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("AI 助手", systemImage: "sparkles") {
+                        isTextEditorFocused = false
+                        showAgentChat = true
+                    }
+                        .labelStyle(.iconOnly)
+                }
+                
                 ToolbarItem(id: AppToolbarIdentity.moreButton, placement: .topBarTrailing) {
                     Button {
                         showSettings = true
@@ -69,6 +78,9 @@ struct ContentView: View {
 
             .navigationDestination(isPresented: $showHistory) {
                 HistoryView(initialSearchText: historySearchText)
+            }
+            .navigationDestination(isPresented: $showAgentChat) {
+                AgentChatView()
             }
             .safeAreaInset(edge: .bottom) {
                 bottomToolbar
@@ -84,6 +96,16 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showWorkflowConfig) {
                 WorkflowConfigView()
+            }
+            .sheet(item: Binding(
+                get: { OffloadPermissionManager.shared.pendingRequest },
+                set: { newValue in
+                    if newValue == nil, let current = OffloadPermissionManager.shared.pendingRequest {
+                        OffloadPermissionManager.shared.respond(to: current.id, allowed: false)
+                    }
+                }
+            )) { request in
+                OffloadPermissionDialog(request: request)
             }
             .alert("Workflow 执行出错", isPresented: $showWorkflowError) {
                 Button("确定") { workflowError = nil }
@@ -102,6 +124,14 @@ struct ContentView: View {
             }
         }
         .onChange(of: showHistory) { _, isShowing in
+            if isShowing {
+                keyboardTask?.cancel()
+                keyboardTask = nil
+            } else {
+                scheduleKeyboardShow(delay: 0.5)
+            }
+        }
+        .onChange(of: showAgentChat) { _, isShowing in
             if isShowing {
                 keyboardTask?.cancel()
                 keyboardTask = nil
