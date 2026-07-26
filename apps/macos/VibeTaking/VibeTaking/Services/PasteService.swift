@@ -1,0 +1,227 @@
+import Cocoa
+import CoreGraphics
+import ApplicationServices
+import Carbon.HIToolbox
+
+enum PasteService {
+    private enum SendDecision: Equatable {
+        case deferredReturn
+        case commandReturn
+    }
+
+    private struct PasteboardSnapshot {
+        struct Item {
+            let dataByType: [NSPasteboard.PasteboardType: Data]
+        }
+
+        let items: [Item]
+
+        static func capture() -> PasteboardSnapshot {
+            let pasteboard = NSPasteboard.general
+            let snapshotItems = (pasteboard.pasteboardItems ?? []).map { pasteboardItem in
+                let dataByType = pasteboardItem.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { partialResult, type in
+                    if let data = pasteboardItem.data(forType: type) {
+                        partialResult[type] = data
+                    }
+                }
+                return Item(dataByType: dataByType)
+            }
+            return PasteboardSnapshot(items: snapshotItems)
+        }
+
+        func restore() {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+
+            guard !items.isEmpty else { return }
+
+            let restoredItems = items.map { snapshotItem in
+                let item = NSPasteboardItem()
+                for (type, data) in snapshotItem.dataByType {
+                    item.setData(data, forType: type)
+                }
+                return item
+            }
+            pasteboard.writeObjects(restoredItems)
+        }
+    }
+
+    private static let commandSendThreshold: TimeInterval = 0.3
+    private static let pasteboardRestoreDelay: TimeInterval = 0.12
+    private static let sendStateQueue = DispatchQueue(label: "com.vibetaking.send-state")
+    private static var pendingReturnWorkItem: DispatchWorkItem?
+    private static var pendingReturnID: UUID?
+
+    private static func eventSource() -> CGEventSource? {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        source?.localEventsSuppressionInterval = 0
+        return source
+    }
+
+    private static func post(_ event: CGEvent, delay: useconds_t = 20_000) {
+        event.post(tap: .cgSessionEventTap)
+        usleep(delay)
+    }
+
+    private static func pressKey(_ keyCode: CGKeyCode, flags: CGEventFlags = [], delay: useconds_t = 20_000) {
+        let src = eventSource()
+        guard let down = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false) else { return }
+        if !flags.isEmpty {
+            down.flags = flags
+            up.flags = flags
+        }
+        post(down, delay: delay)
+        post(up, delay: delay)
+    }
+
+    private static func pressCommandShortcut(_ keyCode: CGKeyCode, delay: useconds_t = 20_000) {
+        let src = eventSource()
+        guard let commandDown = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Command), keyDown: true),
+              let keyDown = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false),
+              let commandUp = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Command), keyDown: false) else { return }
+
+        commandDown.flags = [.maskCommand]
+        keyDown.flags = [.maskCommand]
+        keyUp.flags = [.maskCommand]
+
+        post(commandDown, delay: delay)
+        post(keyDown, delay: delay)
+        post(keyUp, delay: delay)
+        post(commandUp, delay: delay)
+    }
+
+    private static func simulatePaste() {
+        pressCommandShortcut(CGKeyCode(kVK_ANSI_V))
+    }
+
+    private static func scheduleReturnSend() {
+        let sendID = UUID()
+        let workItem = DispatchWorkItem {
+            let shouldSendReturn = sendStateQueue.sync {
+                guard pendingReturnID == sendID else { return false }
+                pendingReturnWorkItem = nil
+                pendingReturnID = nil
+                return true
+            }
+
+            guard shouldSendReturn else { return }
+            pressKey(CGKeyCode(kVK_Return))
+        }
+
+        pendingReturnWorkItem = workItem
+        pendingReturnID = sendID
+        DispatchQueue.main.asyncAfter(deadline: .now() + commandSendThreshold, execute: workItem)
+    }
+
+    private static func simulateSend() {
+        let decision: SendDecision = sendStateQueue.sync {
+            if let pendingReturnWorkItem {
+                pendingReturnWorkItem.cancel()
+                self.pendingReturnWorkItem = nil
+                pendingReturnID = nil
+                return .commandReturn
+            }
+
+            scheduleReturnSend()
+            return .deferredReturn
+        }
+
+        if decision == .commandReturn {
+            pressCommandShortcut(CGKeyCode(kVK_Return))
+        }
+    }
+
+    private static func writeToPasteboard(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    private static func schedulePasteboardRestore(_ snapshot: PasteboardSnapshot?) {
+        guard let snapshot else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + pasteboardRestoreDelay) {
+            snapshot.restore()
+        }
+    }
+
+    private static func copyStringAttribute(_ attribute: String, from element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        guard result == .success else { return nil }
+        return value as? String
+    }
+
+    private static func copyAXChildren(from element: AXUIElement) -> [AXUIElement] {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
+        guard result == .success, let children = value as? [AXUIElement] else { return [] }
+        return children
+    }
+
+    private static func findPasteMenuItem(in element: AXUIElement) -> AXUIElement? {
+        if let title = copyStringAttribute(kAXTitleAttribute as String, from: element) {
+            let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalized == "paste" || normalized == "粘贴" {
+                return element
+            }
+        }
+
+        for child in copyAXChildren(from: element) {
+            if let match = findPasteMenuItem(in: child) {
+                return match
+            }
+        }
+
+        return nil
+    }
+
+    private static func performPasteMenuAction(targetPID: pid_t?) -> Bool {
+        guard let targetPID else { return false }
+
+        let appElement = AXUIElementCreateApplication(targetPID)
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(appElement, kAXMenuBarAttribute as CFString, &value)
+        guard result == .success, let menuBarRef = value else { return false }
+        guard CFGetTypeID(menuBarRef) == AXUIElementGetTypeID() else { return false }
+
+        let menuBar = unsafeBitCast(menuBarRef, to: AXUIElement.self)
+        guard let pasteMenuItem = findPasteMenuItem(in: menuBar) else { return false }
+
+        return AXUIElementPerformAction(pasteMenuItem, kAXPressAction as CFString) == .success
+    }
+
+    static func copyAndPaste(
+        text: String,
+        autoSend: Bool,
+        targetPID: pid_t? = nil,
+        preserveExistingClipboard: Bool = false
+    ) {
+        let pasteboardSnapshot = preserveExistingClipboard ? PasteboardSnapshot.capture() : nil
+        writeToPasteboard(text)
+
+        if performPasteMenuAction(targetPID: targetPID) {
+            schedulePasteboardRestore(pasteboardSnapshot)
+            if autoSend {
+                usleep(150_000)
+                simulateSend()
+            }
+            return
+        }
+
+        usleep(50_000)
+        simulatePaste()
+        schedulePasteboardRestore(pasteboardSnapshot)
+
+        if autoSend {
+            usleep(150_000)
+            simulateSend()
+        }
+    }
+
+    static func send() {
+        simulateSend()
+    }
+}
