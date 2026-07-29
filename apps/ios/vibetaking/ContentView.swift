@@ -57,21 +57,26 @@ struct ContentView: View {
                         .labelStyle(.iconOnly)
                 }
                 
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("AI 助手", systemImage: "sparkles") {
-                        isTextEditorFocused = false
-                        showAgentChat = true
-                    }
-                        .labelStyle(.iconOnly)
-                }
-                
                 ToolbarItem(id: AppToolbarIdentity.moreButton, placement: .topBarTrailing) {
-                    Button {
-                        showSettings = true
+                    Menu {
+                        Button {
+                            isTextEditorFocused = false
+                            showAgentChat = true
+                        } label: {
+                            Label("AI 助手", systemImage: "sparkles")
+                        }
+
+                        Divider()
+
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Label("设置", systemImage: "gearshape")
+                        }
                     } label: {
                         AppToolbarMoreLabel()
                     }
-                    .accessibilityLabel("设置")
+                    .accessibilityLabel("更多")
                     .id(AppToolbarIdentity.moreButton)
                 }
             }
