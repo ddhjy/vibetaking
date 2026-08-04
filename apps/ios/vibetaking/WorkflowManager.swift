@@ -549,6 +549,42 @@ class WorkflowManager {
         )
     }
 
+    /// 草稿为空时，向 Workflow 内已启用的 HTTP 发送节点 POST `/send`，让 Mac 端模拟回车。
+    /// - Returns: 是否至少向一个 HTTP 节点发起了请求
+    func sendReturnKey(workflowID: UUID) async throws -> Bool {
+        guard let workflow = workflows.first(where: { $0.id == workflowID }) else {
+            throw NSError(
+                domain: "WorkflowManager",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "该 Workflow 已不存在"]
+            )
+        }
+
+        guard workflow.kind == .manual else {
+            return false
+        }
+
+        let httpNodes = workflow.nodes.filter { $0.isEnabled && $0.type == .httpPost }
+        guard !httpNodes.isEmpty else { return false }
+
+        for node in httpNodes {
+            let host = node.config.httpHost ?? "localhost"
+            let port = node.config.httpPort ?? 9999
+            let urlString = "http://\(host):\(port)/send"
+            guard let url = URL(string: urlString) else {
+                throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "目标地址格式有误，请检查主机和端口"])
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                throw NSError(domain: "WorkflowManager", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "发送失败，请检查目标地址是否正确"])
+            }
+        }
+
+        return true
+    }
+
     /// Agent 节点：把草稿交给多轮工具循环处理，返回最终文本。
     /// 复用聊天页的完整工具集（笔记 / 文件 / 记忆 / 设备）。
     private func executeAgentNode(prompt: String, input: String) async throws -> String {

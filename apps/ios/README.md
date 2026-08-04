@@ -24,7 +24,7 @@ Workflow 分两类，都显示为主页底部工具栏的按钮，可新建、�
 | --- | --- |
 | `ai_process` | 用节点内提示词调用 AI，返回结果成为后续节点输入 |
 | `copy` | 将当前文本写入系统剪贴板 |
-| `http_post` | 以 `text/plain; charset=utf-8` POST 到 `http://host:port` |
+| `http_post` | 以 `text/plain; charset=utf-8` POST 到 `http://host:port`；草稿为空时点按同一 Workflow 会向各已启用 HTTP 节点的 `http://host:port/send` 发送回车指令（配合 macOS 端粘贴后一键发送） |
 | `save` | 将最终文本保存为历史记录，并继承当前草稿标签 |
 
 ### Auto Paste 草稿同步

@@ -1462,6 +1462,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 preserveExistingClipboard: true
             )
         }
+        srv.onSendRequest = {
+            DispatchQueue.main.async {
+                PasteService.send()
+            }
+        }
         srv.onDraftUpdate = { [weak self] update in
             DispatchQueue.main.async {
                 guard let self else { return }

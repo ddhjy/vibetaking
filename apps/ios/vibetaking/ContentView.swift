@@ -368,7 +368,20 @@ struct ContentView: View {
             return
         }
 
-        guard !draftText.isEmpty else { return }
+        if draftText.isEmpty {
+            Task {
+                do {
+                    let didSend = try await workflowManager.sendReturnKey(workflowID: workflow.id)
+                    guard didSend else { return }
+                } catch {
+                    await MainActor.run {
+                        workflowError = error
+                        showWorkflowError = true
+                    }
+                }
+            }
+            return
+        }
 
         interruptDraftInputSession()
 

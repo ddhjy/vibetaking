@@ -13,6 +13,7 @@ final class HTTPServer {
     var autoSend = false
     var onPasteRequest: ((String, Bool) -> Void)?
     var onDraftUpdate: ((DraftUpdate) -> Void)?
+    var onSendRequest: (() -> Void)?
 
     func start(port: UInt16) throws {
         listenSocket = socket(AF_INET, SOCK_STREAM, 0)
@@ -208,8 +209,12 @@ final class HTTPServer {
             onDraftUpdate?(update)
             sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
 
+        case "/send":
+            onSendRequest?()
+            sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
+
         default:
-            sendResponse(fd: fd, status: 404, body: "{\"error\": \"not found\", \"hint\": \"POST to / or /draft\"}")
+            sendResponse(fd: fd, status: 404, body: "{\"error\": \"not found\", \"hint\": \"POST to /, /draft, or /send\"}")
         }
     }
 
