@@ -27,7 +27,11 @@
 	<key>NSCalendarsUsageDescription</key>
 	<string>AI 助手根据你的指令查询日程、检查忙闲并代你创建日历事件。</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>用于把当前草稿实时同步到局域网中的 AutoPaste，并接收回调清空指令。</string>
+	<string>用于自动发现同一网络内的桌面端、把当前草稿实时同步过去，并接收回调清空指令。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_vibetaking._tcp</string>
+	</array>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>AI 助手根据你的指令查询和创建提醒事项。</string>
 	<key>NSRemindersUsageDescription</key>

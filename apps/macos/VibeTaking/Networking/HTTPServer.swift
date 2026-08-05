@@ -79,6 +79,9 @@ final class HTTPServer {
     private func handleClient(_ fd: Int32, clientAddr: sockaddr_in) {
         defer { close(fd) }
 
+        var nosigpipe: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, socklen_t(MemoryLayout<Int32>.size))
+
         let separator = Data("\r\n\r\n".utf8)
         var requestData = Data()
         var headerRange: Range<Data.Index>?

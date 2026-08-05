@@ -182,6 +182,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchAtLogin = false
     private var server: HTTPServer?
     private var serverRunning = false
+    private let bonjourAdvertiser = BonjourAdvertiser()
     private var ipTitleResetWorkItem: DispatchWorkItem?
     private var hotKeyRefs: [GlobalShortcutAction: EventHotKeyRef] = [:]
     private var hotKeyHandler: EventHandlerRef?
@@ -1511,6 +1512,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             server = srv
             serverRunning = true
             updateIcon()
+            bonjourAdvertiser.start(port: port)
             print("VibeTaking listening on http://0.0.0.0:\(port)")
         } catch {
             print("Failed to start server: \(error)")
@@ -1520,6 +1522,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopServer() {
         guard serverRunning else { return }
         popover.performClose(nil)
+        bonjourAdvertiser.stop()
         server?.stop()
         server = nil
         serverRunning = false

@@ -11,6 +11,7 @@
 		A10000010000000000000002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000002 /* AppDelegate.swift */; };
 		A10000010000000000000003 /* StatusBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000003 /* StatusBarIcon.swift */; };
 		A10000010000000000000004 /* HTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000004 /* HTTPServer.swift */; };
+		A10000010000000000000006 /* BonjourAdvertiser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000008 /* BonjourAdvertiser.swift */; };
 		A10000010000000000000005 /* PasteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000005 /* PasteService.swift */; };
 		A10000010000000000000010 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000010000000000000010 /* Cocoa.framework */; };
 		A10000010000000000000011 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000010000000000000011 /* CoreGraphics.framework */; };
@@ -22,6 +23,7 @@
 		A20000010000000000000002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A20000010000000000000003 /* StatusBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarIcon.swift; sourceTree = "<group>"; };
 		A20000010000000000000004 /* HTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPServer.swift; sourceTree = "<group>"; };
+		A20000010000000000000008 /* BonjourAdvertiser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourAdvertiser.swift; sourceTree = "<group>"; };
 		A20000010000000000000005 /* PasteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteService.swift; sourceTree = "<group>"; };
 		A20000010000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000010000000000000007 /* VibeTaking.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VibeTaking.entitlements; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000010000000000000004 /* HTTPServer.swift */,
+				A20000010000000000000008 /* BonjourAdvertiser.swift */,
 			);
 			path = Networking;
 			sourceTree = "<group>";
@@ -198,6 +201,7 @@
 				A10000010000000000000002 /* AppDelegate.swift in Sources */,
 				A10000010000000000000003 /* StatusBarIcon.swift in Sources */,
 				A10000010000000000000004 /* HTTPServer.swift in Sources */,
+				A10000010000000000000006 /* BonjourAdvertiser.swift in Sources */,
 				A10000010000000000000005 /* PasteService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -348,37 +348,58 @@ struct WorkflowConfigView: View {
     @ViewBuilder
     private func autoPasteSyncEditor(for workflow: Workflow) -> some View {
         let host = workflow.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        let needsHost = host.isEmpty
+        let serviceName = (workflow.syncConfig.serviceName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let isBound = !serviceName.isEmpty
+        let needsTarget = host.isEmpty && !isBound
 
         Section {
             Toggle("开启同步", isOn: autoPasteActiveBinding(for: workflow.id))
                 .tint(WorkflowConfigStyle.controlTint)
-
-            TextField("AutoPaste 主机地址", text: autoPasteHostBinding(for: workflow.id))
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-
-            TextField("AutoPaste 端口", value: autoPastePortBinding(for: workflow.id), format: .number)
-                .keyboardType(.numberPad)
         } header: {
             Text("同步配置")
         } footer: {
             Text("主页点亮后会实时同步当前草稿，并接收远端清空指令。同一时间只允许一个 Auto Paste 开启同步、一个显示在主页。")
         }
 
+        DeviceBindingSection(
+            boundServiceName: isBound ? serviceName : nil,
+            onSelect: { device in
+                syncWarningWorkflowId = nil
+                bindDevice(device, to: workflow.id)
+            },
+            onUnbind: {
+                workflowManager.bindAutoPasteSyncDevice(workflowID: workflow.id, serviceName: nil)
+            }
+        )
+
+        if !isBound {
+            Section {
+                TextField("AutoPaste 主机地址", text: autoPasteHostBinding(for: workflow.id))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+
+                TextField("AutoPaste 端口", value: autoPastePortBinding(for: workflow.id), format: .number)
+                    .keyboardType(.numberPad)
+            } header: {
+                Text("手动配置（备用）")
+            } footer: {
+                Text("找不到附近设备时，可手动填写 Mac 菜单栏显示的 IP 与端口。")
+            }
+        }
+
         Section {
             HStack(spacing: 10) {
-                Image(systemName: needsHost ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(needsHost ? .orange : WorkflowConfigStyle.controlTint)
+                Image(systemName: needsTarget ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(needsTarget ? .orange : WorkflowConfigStyle.controlTint)
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(needsHost ? "未配置目标" : "\(host):\(workflow.syncConfig.port)")
+                    Text(targetPreviewTitle(for: workflow))
                         .font(.callout.weight(.medium))
                         .lineLimit(1)
 
-                    Text(needsHost ? "填写主机地址后才能开启同步" : "当前同步目标")
+                    Text(targetPreviewSubtitle(for: workflow))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -387,11 +408,41 @@ struct WorkflowConfigView: View {
             Text("目标预览")
         }
 
-        if syncWarningWorkflowId == workflow.id && needsHost {
+        if syncWarningWorkflowId == workflow.id && needsTarget {
             Section {
-                Label("请先填写 AutoPaste 主机地址", systemImage: "exclamationmark.triangle.fill")
+                Label("请先选择附近设备，或手动填写主机地址", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
             }
+        }
+    }
+
+    private func targetPreviewTitle(for workflow: Workflow) -> String {
+        let host = workflow.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let serviceName = workflow.syncConfig.serviceName, !serviceName.isEmpty {
+            return serviceName
+        }
+        return host.isEmpty ? "未配置目标" : "\(host):\(workflow.syncConfig.port)"
+    }
+
+    private func targetPreviewSubtitle(for workflow: Workflow) -> String {
+        let host = workflow.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let serviceName = workflow.syncConfig.serviceName, !serviceName.isEmpty {
+            return host.isEmpty
+                ? "已绑定设备，发送时自动解析地址"
+                : "已绑定设备 · 上次解析 \(host):\(workflow.syncConfig.port)"
+        }
+        return host.isEmpty ? "选择附近设备或填写主机地址后才能开启同步" : "当前同步目标（手动配置）"
+    }
+
+    private func bindDevice(_ device: DiscoveredDevice, to workflowID: UUID) {
+        Task {
+            let resolved = await BonjourResolver.resolve(serviceName: device.serviceName)
+            workflowManager.bindAutoPasteSyncDevice(
+                workflowID: workflowID,
+                serviceName: device.serviceName,
+                host: resolved?.host ?? "",
+                port: resolved?.port
+            )
         }
     }
 
@@ -461,7 +512,10 @@ struct WorkflowConfigView: View {
         if workflow.kind == .autoPasteSync {
             let state = workflow.isActive ? "同步已开启" : "同步已关闭"
             let host = workflow.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines)
-            let target = host.isEmpty ? "未配置目标" : "\(host):\(workflow.syncConfig.port)"
+            let serviceName = (workflow.syncConfig.serviceName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let target = !serviceName.isEmpty
+                ? serviceName
+                : (host.isEmpty ? "未配置目标" : "\(host):\(workflow.syncConfig.port)")
             return "\(visibility) · \(state) · \(target)"
         }
 
@@ -499,7 +553,8 @@ struct WorkflowConfigView: View {
 
             if newValue {
                 let host = workflow?.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard !host.isEmpty else {
+                let serviceName = (workflow?.syncConfig.serviceName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !host.isEmpty || !serviceName.isEmpty else {
                     syncWarningWorkflowId = workflowID
                     return
                 }
@@ -728,6 +783,9 @@ struct NodeRowView: View {
         }
 
         if node.type == .httpPost {
+            if let serviceName = node.config.httpServiceName, !serviceName.isEmpty {
+                return serviceName
+            }
             let host = node.config.httpHost ?? "localhost"
             let port = node.config.httpPort ?? 9999
             return "\(host):\(port)"
@@ -785,6 +843,7 @@ struct EditNodeSheet: View {
     @State private var agentPrompt: String = ""
     @State private var httpHost: String = ""
     @State private var httpPort: String = ""
+    @State private var boundServiceName: String?
 
     var body: some View {
         NavigationStack {
@@ -808,17 +867,33 @@ struct EditNodeSheet: View {
                 }
 
                 if node.type == .httpPost {
-                    Section {
-                        TextField("主机地址", text: $httpHost)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                        TextField("端口", text: $httpPort)
-                            .keyboardType(.numberPad)
-                    } header: {
-                        Text("HTTP 配置")
-                    } footer: {
-                        Text("内容将发送到以下地址")
+                    DeviceBindingSection(
+                        boundServiceName: boundServiceName,
+                        onSelect: { device in
+                            boundServiceName = device.serviceName
+                            Task {
+                                if let resolved = await BonjourResolver.resolve(serviceName: device.serviceName) {
+                                    httpHost = resolved.host
+                                    httpPort = "\(resolved.port)"
+                                }
+                            }
+                        },
+                        onUnbind: { boundServiceName = nil }
+                    )
+
+                    if boundServiceName == nil {
+                        Section {
+                            TextField("主机地址", text: $httpHost)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                                .keyboardType(.URL)
+                            TextField("端口", text: $httpPort)
+                                .keyboardType(.numberPad)
+                        } header: {
+                            Text("HTTP 配置")
+                        } footer: {
+                            Text("内容将发送到以下地址（未绑定设备时使用）")
+                        }
                     }
                 }
 
@@ -841,9 +916,10 @@ struct EditNodeSheet: View {
                 agentPrompt = node.config.agentPrompt ?? ""
                 httpHost = node.config.httpHost ?? "localhost"
                 httpPort = "\(node.config.httpPort ?? 9999)"
+                boundServiceName = node.config.httpServiceName
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 
     private func saveChanges() {
@@ -852,8 +928,99 @@ struct EditNodeSheet: View {
         updated.config.agentPrompt = agentPrompt.isEmpty ? nil : agentPrompt
         updated.config.httpHost = httpHost.isEmpty ? nil : httpHost
         updated.config.httpPort = Int(httpPort)
+        updated.config.httpServiceName = boundServiceName
         workflowManager.updateNode(updated)
         dismiss()
+    }
+}
+
+struct DeviceBindingSection: View {
+    let boundServiceName: String?
+    let onSelect: (DiscoveredDevice) -> Void
+    let onUnbind: () -> Void
+
+    @Bindable private var discovery = DeviceDiscoveryManager.shared
+
+    var body: some View {
+        Section {
+            if let boundServiceName {
+                HStack(spacing: 10) {
+                    Image(systemName: "laptopcomputer")
+                        .foregroundStyle(WorkflowConfigStyle.controlTint)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(boundServiceName)
+                            .font(.callout.weight(.medium))
+                        Text(isBoundDeviceOnline ? "在线" : "当前不在线，发送时会自动重试")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button("解绑", role: .destructive, action: onUnbind)
+                        .font(.callout)
+                }
+            }
+
+            if candidates.isEmpty && boundServiceName == nil {
+                discoveryEmptyState
+            }
+
+            ForEach(candidates) { device in
+                Button {
+                    onSelect(device)
+                } label: {
+                    Label(device.serviceName, systemImage: "laptopcomputer")
+                        .foregroundStyle(.primary)
+                }
+            }
+        } header: {
+            Text("附近设备")
+        } footer: {
+            Text("需要 Mac 端应用已运行，且两台设备连接同一网络。首次使用会请求「本地网络」权限。")
+        }
+        .onAppear { discovery.start() }
+        .onDisappear { discovery.stop() }
+    }
+
+    private var candidates: [DiscoveredDevice] {
+        discovery.devices.filter { $0.serviceName != boundServiceName }
+    }
+
+    private var isBoundDeviceOnline: Bool {
+        discovery.devices.contains { $0.serviceName == boundServiceName }
+    }
+
+    @ViewBuilder
+    private var discoveryEmptyState: some View {
+        switch discovery.status {
+        case .idle, .searching:
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("正在搜索附近的桌面端…")
+                    .foregroundStyle(.secondary)
+            }
+        case .ready:
+            VStack(alignment: .leading, spacing: 6) {
+                Text("未找到附近的桌面端")
+                    .font(.callout)
+                Text("请确认 Mac 已打开随心记、与 iPhone 在同一 Wi‑Fi，并在「设置 → 随心记 → 本地网络」中允许访问。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 6) {
+                Text("无法搜索附近设备")
+                    .font(.callout)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("请在「设置 → 隐私与安全性 → 本地网络」中允许随心记。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

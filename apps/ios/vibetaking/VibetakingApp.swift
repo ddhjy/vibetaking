@@ -36,6 +36,7 @@ final class AutoPasteSyncManager {
     private var syncTask: Task<Void, Never>?
     private var lastDeliveredDraftSync: DraftSyncState?
     private var consecutiveSyncFailures = 0
+    private var resolvedEndpoints: [String: BonjourResolver.Resolved] = [:]
 
     private init() {
         controlServer.onClearDraft = { [weak self] in
@@ -67,6 +68,8 @@ final class AutoPasteSyncManager {
             return
         }
 
+        resolvedEndpoints.removeAll()
+
         guard !currentTargets.isEmpty else {
             lastActiveTargets = currentTargets
             return
@@ -79,6 +82,7 @@ final class AutoPasteSyncManager {
     func settingsDidChange() {
         let currentTargets = Set(activeSyncTargets)
         let removedTargets = Array(lastActiveTargets.subtracting(currentTargets))
+        resolvedEndpoints.removeAll()
 
         guard isSceneActive else {
             lastActiveTargets = currentTargets
@@ -187,10 +191,19 @@ final class AutoPasteSyncManager {
 
         let payload = DraftPayload(text: text, callbackPort: callbackPort)
 
-        return await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
-            for target in targets {
-                guard let url = targetURL(path: "/draft", target: target) else { continue }
+        var endpoints: [(target: SyncTarget, url: URL)] = []
+        var allResolved = true
+        for target in targets {
+            guard let endpoint = await resolveEndpoint(for: target),
+                  let url = targetURL(path: "/draft", host: endpoint.host, port: endpoint.port) else {
+                allResolved = false
+                continue
+            }
+            endpoints.append((target, url))
+        }
 
+        let allSent = await withTaskGroup(of: (SyncTarget, Bool).self, returning: Bool.self) { group in
+            for (target, url) in endpoints {
                 group.addTask {
                     var request = URLRequest(url: url)
                     request.httpMethod = "POST"
@@ -202,47 +215,80 @@ final class AutoPasteSyncManager {
                         let (_, response) = try await URLSession.shared.data(for: request)
                         if let httpResponse = response as? HTTPURLResponse,
                            !(200...299).contains(httpResponse.statusCode) {
-                            print("AutoPaste sync failed for \(target.host):\(target.port) with status: \(httpResponse.statusCode)")
-                            return false
+                            print("AutoPaste sync failed for \(url.absoluteString) with status: \(httpResponse.statusCode)")
+                            return (target, false)
                         }
-                        return true
+                        return (target, true)
                     } catch {
-                        print("AutoPaste sync failed for \(target.host):\(target.port): \(error.localizedDescription)")
-                        return false
+                        print("AutoPaste sync failed for \(url.absoluteString): \(error.localizedDescription)")
+                        return (target, false)
                     }
                 }
             }
 
             var allSucceeded = true
-            for await didSucceed in group {
-                if !didSucceed {
-                    allSucceeded = false
-                }
+            for await (target, didSucceed) in group where !didSucceed {
+                allSucceeded = false
+                invalidateResolution(for: target)
             }
             return allSucceeded
         }
+
+        return allResolved && allSent
     }
 
-    private func targetURL(path: String, target: SyncTarget) -> URL? {
-        var components = URLComponents()
-        components.scheme = "http"
-        components.host = target.host
-        components.port = target.port
-        components.path = path
-        return components.url
+    private func targetURL(path: String, host: String, port: Int) -> URL? {
+        HTTPTargetURL.make(host: host, port: port, path: path)
+    }
+
+    private func resolveEndpoint(for target: SyncTarget) async -> BonjourResolver.Resolved? {
+        guard let serviceName = target.serviceName else {
+            return target.host.isEmpty ? nil : BonjourResolver.Resolved(host: target.host, port: target.port)
+        }
+
+        if let cached = resolvedEndpoints[serviceName] {
+            return cached
+        }
+
+        if let resolved = await BonjourResolver.resolve(serviceName: serviceName) {
+            resolvedEndpoints[serviceName] = resolved
+            if let workflowID = target.workflowID {
+                WorkflowManager.shared.cacheResolvedSyncTarget(
+                    workflowID: workflowID,
+                    host: resolved.host,
+                    port: resolved.port
+                )
+            }
+            return resolved
+        }
+
+        return target.host.isEmpty ? nil : BonjourResolver.Resolved(host: target.host, port: target.port)
+    }
+
+    private func invalidateResolution(for target: SyncTarget) {
+        guard let serviceName = target.serviceName else { return }
+        resolvedEndpoints.removeValue(forKey: serviceName)
     }
 
     private var activeSyncTargets: [SyncTarget] {
         WorkflowManager.shared.autoPasteSyncWorkflows.compactMap { workflow in
             guard workflow.isActive else { return nil }
             let host = workflow.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !host.isEmpty else { return nil }
-            return SyncTarget(host: host, port: workflow.syncConfig.port)
+            let serviceName = (workflow.syncConfig.serviceName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !host.isEmpty || !serviceName.isEmpty else { return nil }
+            return SyncTarget(
+                workflowID: workflow.id,
+                serviceName: serviceName.isEmpty ? nil : serviceName,
+                host: host,
+                port: workflow.syncConfig.port
+            )
         }
     }
 }
 
 nonisolated private struct SyncTarget: Hashable, Sendable {
+    let workflowID: UUID?
+    let serviceName: String?
     let host: String
     let port: Int
 }

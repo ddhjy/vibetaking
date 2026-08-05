@@ -47,6 +47,7 @@ struct WorkflowNode: Identifiable, Codable, Equatable {
         var agentPrompt: String?
         var httpHost: String?
         var httpPort: Int?
+        var httpServiceName: String?
     }
     
     init(id: UUID = UUID(), type: WorkflowNodeType, isEnabled: Bool = true, config: NodeConfig = NodeConfig()) {
@@ -75,10 +76,12 @@ struct Workflow: Identifiable, Codable, Equatable {
     struct SyncConfig: Codable, Equatable {
         var host: String
         var port: Int
+        var serviceName: String?
 
-        init(host: String = "", port: Int = 7788) {
+        init(host: String = "", port: Int = 7788, serviceName: String? = nil) {
             self.host = host
             self.port = port
+            self.serviceName = serviceName
         }
     }
 
@@ -357,6 +360,7 @@ class WorkflowManager {
 
         if let host {
             workflows[idx].syncConfig.host = host
+            workflows[idx].syncConfig.serviceName = nil
         }
         if let port {
             workflows[idx].syncConfig.port = Self.normalizedPort(port)
@@ -364,6 +368,33 @@ class WorkflowManager {
 
         saveWorkflows()
         notifyAutoPasteSyncWorkflowChanged()
+    }
+
+    func bindAutoPasteSyncDevice(workflowID: UUID, serviceName: String?, host: String = "", port: Int? = nil) {
+        guard let idx = workflows.firstIndex(where: { $0.id == workflowID }),
+              workflows[idx].kind == .autoPasteSync else { return }
+
+        workflows[idx].syncConfig.serviceName = serviceName
+        if !host.isEmpty {
+            workflows[idx].syncConfig.host = host
+        }
+        if let port {
+            workflows[idx].syncConfig.port = Self.normalizedPort(port)
+        }
+
+        saveWorkflows()
+        notifyAutoPasteSyncWorkflowChanged()
+    }
+
+    func cacheResolvedSyncTarget(workflowID: UUID, host: String, port: Int) {
+        guard let idx = workflows.firstIndex(where: { $0.id == workflowID }),
+              workflows[idx].kind == .autoPasteSync,
+              workflows[idx].syncConfig.serviceName != nil else { return }
+        guard workflows[idx].syncConfig.host != host || workflows[idx].syncConfig.port != port else { return }
+
+        workflows[idx].syncConfig.host = host
+        workflows[idx].syncConfig.port = Self.normalizedPort(port)
+        saveWorkflows()
     }
 
     func moveWorkflows(inOpenState isOpen: Bool, from source: IndexSet, to destination: Int) {
@@ -513,10 +544,8 @@ class WorkflowManager {
                 }
                 
             case .httpPost:
-                let host = node.config.httpHost ?? "localhost"
-                let port = node.config.httpPort ?? 9999
-                let urlString = "http://\(host):\(port)"
-                guard let url = URL(string: urlString) else {
+                let target = await resolveHTTPNodeTarget(node.config)
+                guard let url = HTTPTargetURL.make(host: target.host, port: target.port) else {
                     throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "目标地址格式有误，请检查主机和端口"])
                 }
                 var request = URLRequest(url: url)
@@ -568,10 +597,8 @@ class WorkflowManager {
         guard !httpNodes.isEmpty else { return false }
 
         for node in httpNodes {
-            let host = node.config.httpHost ?? "localhost"
-            let port = node.config.httpPort ?? 9999
-            let urlString = "http://\(host):\(port)/send"
-            guard let url = URL(string: urlString) else {
+            let target = await resolveHTTPNodeTarget(node.config)
+            guard let url = HTTPTargetURL.make(host: target.host, port: target.port, path: "/send") else {
                 throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "目标地址格式有误，请检查主机和端口"])
             }
             var request = URLRequest(url: url)
@@ -583,6 +610,26 @@ class WorkflowManager {
         }
 
         return true
+    }
+
+    private func resolveHTTPNodeTarget(_ config: WorkflowNode.NodeConfig) async -> (host: String, port: Int) {
+        let cachedHost = config.httpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let cachedPort = config.httpPort ?? 9999
+
+        if let serviceName = config.httpServiceName, !serviceName.isEmpty {
+            if let resolved = await BonjourResolver.resolve(serviceName: serviceName),
+               HTTPTargetURL.make(host: resolved.host, port: resolved.port) != nil {
+                return (resolved.host, resolved.port)
+            }
+            if !cachedHost.isEmpty {
+                return (cachedHost, cachedPort)
+            }
+        }
+
+        if !cachedHost.isEmpty {
+            return (cachedHost, cachedPort)
+        }
+        return ("localhost", cachedPort)
     }
 
     /// Agent 节点：把草稿交给多轮工具循环处理，返回最终文本。
