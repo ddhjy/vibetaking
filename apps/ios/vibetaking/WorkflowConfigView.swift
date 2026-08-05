@@ -809,17 +809,12 @@ struct AddNodeSheet: View {
                         workflowManager.addNode(newNode)
                         dismiss()
                     } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: type.icon)
-                                .font(.system(size: 18))
-                                .foregroundStyle(.primary)
-                                .frame(width: 28)
-                            Text(type.displayName)
-                        }
+                        Label(type.displayName, systemImage: type.icon)
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .listStyle(.insetGrouped)
+            .listStyle(.plain)
             .tint(WorkflowConfigStyle.controlTint)
             .navigationTitle("添加节点")
             .navigationBarTitleDisplayMode(.inline)
@@ -831,6 +826,8 @@ struct AddNodeSheet: View {
             }
         }
         .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(.regularMaterial)
     }
 }
 
