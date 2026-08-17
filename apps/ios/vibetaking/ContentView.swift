@@ -28,9 +28,8 @@ struct ContentView: View {
     @State private var inputSessionResetToken = 0
 
     @AppStorage("focusedWorkflowID") private var focusedWorkflowIDRaw: String = ""
-    /// 长按切换专注模式后，用于吞掉同一次按压在松手时触发的 Button 点击。
-    @State private var lastFocusToggleAt: Date? = nil
-    @Namespace private var toolbarNamespace
+    /// 长按切换专注模式后，吞掉同一次按压在松手时触发的 Button 点击。
+    @State private var suppressNextWorkflowTap = false
     
     private var draftText: String {
         historyManager.currentDraft.text
@@ -238,14 +237,8 @@ struct ContentView: View {
 
             ForEach(workflowManager.openWorkflows) { workflow in
                 if !isFocusMode || focusedWorkflow?.id == workflow.id {
-                    Group {
-                        if isFocusMode {
-                            focusedWorkflowButton(for: workflow)
-                        } else {
-                            workflowButton(for: workflow)
-                        }
-                    }
-                    .transition(accessoryTransition)
+                    workflowButton(for: workflow)
+                        .transition(accessoryTransition)
                 }
             }
         }
@@ -260,34 +253,6 @@ struct ContentView: View {
         )
     }
 
-    /// 专注态主操作：坐在已有胶囊里，不再另起一层玻璃。
-    private func focusedWorkflowButton(for workflow: Workflow) -> some View {
-        Button {
-            handleWorkflowTap(workflow)
-        } label: {
-            HStack(spacing: 10) {
-                workflowGlyph(for: workflow, focused: true)
-
-                Text(workflow.name)
-                    .font(.system(size: 17, weight: .semibold))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 56)
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(processingWorkflowId != nil)
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                exitFocusMode(fromLongPress: true)
-            }
-        )
-        .accessibilityLabel("\(workflow.name)，专注模式")
-        .accessibilityHint("长按退出专注模式")
-    }
-
     @ViewBuilder
     private func workflowGlyph(for workflow: Workflow, focused: Bool) -> some View {
         Group {
@@ -297,11 +262,11 @@ struct ContentView: View {
                     .scaleEffect(focused ? 1 : 0.8)
             } else {
                 Image(systemName: workflow.icon)
-                    .font(.system(size: focused ? 20 : 18, weight: focused ? .semibold : .medium))
+                    .font(.system(size: 18, weight: .medium))
             }
         }
-        .frame(width: focused ? 24 : 20, height: focused ? 24 : 20)
-        .matchedGeometryEffect(id: "workflowGlyph-\(workflow.id.uuidString)", in: toolbarNamespace)
+        .frame(width: 20, height: 20)
+        .scaleEffect(focused ? 1.15 : 1)
     }
 
     @ViewBuilder
@@ -372,22 +337,38 @@ struct ContentView: View {
     }
     
     private func workflowButton(for workflow: Workflow) -> some View {
-        Button {
+        let focused = isFocusMode && focusedWorkflow?.id == workflow.id
+        return Button {
             handleWorkflowTap(workflow)
         } label: {
-            workflowGlyph(for: workflow, focused: false)
+            HStack(spacing: 10) {
+                workflowGlyph(for: workflow, focused: focused)
+                if focused {
+                    Text(workflow.name)
+                        .font(.system(size: 17, weight: .semibold))
+                        .lineLimit(1)
+                        .transition(.opacity)
+                }
+            }
+            .foregroundStyle(focused ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
+            .frame(width: focused ? nil : 44, height: focused ? 56 : 44)
+            .frame(maxWidth: focused ? .infinity : nil)
+            .contentShape(Capsule())
         }
-        .disabled(processingWorkflowId != nil)
+        .buttonStyle(.plain)
         .tint(workflowTintColor(for: workflow))
-        .frame(width: 44, height: 44)
-        .contentShape(Circle())
+        .disabled(processingWorkflowId != nil)
         .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                enterFocusMode(workflow)
+                if isFocusMode {
+                    exitFocusMode(fromLongPress: true)
+                } else {
+                    enterFocusMode(workflow)
+                }
             }
         )
-        .accessibilityLabel(workflowAccessibilityLabel(for: workflow))
-        .accessibilityHint(workflow.kind == .manual ? "长按进入专注模式" : "")
+        .accessibilityLabel(focused ? "\(workflow.name)，专注模式" : workflowAccessibilityLabel(for: workflow))
+        .accessibilityHint(workflow.kind == .manual ? (focused ? "长按退出专注模式" : "长按进入专注模式") : "")
     }
     
     private var fullScreenEditor: some View {
@@ -473,7 +454,7 @@ struct ContentView: View {
     
     private func enterFocusMode(_ workflow: Workflow) {
         guard workflow.kind == .manual, processingWorkflowId == nil else { return }
-        lastFocusToggleAt = Date()
+        suppressNextWorkflowTap = true
         withAnimation(focusTransition) {
             focusedWorkflowIDRaw = workflow.id.uuidString
         }
@@ -482,7 +463,7 @@ struct ContentView: View {
     private func exitFocusMode(fromLongPress: Bool = false) {
         guard isFocusMode, processingWorkflowId == nil else { return }
         if fromLongPress {
-            lastFocusToggleAt = Date()
+            suppressNextWorkflowTap = true
         }
         withAnimation(focusTransition) {
             focusedWorkflowIDRaw = ""
@@ -490,12 +471,9 @@ struct ContentView: View {
     }
 
     private func handleWorkflowTap(_ workflow: Workflow) {
-        // 长按切换专注模式后，同一次按压松手可能再触发一次点击，这里吞掉它，避免误执行。
-        if let toggleAt = lastFocusToggleAt {
-            lastFocusToggleAt = nil
-            if Date().timeIntervalSince(toggleAt) < 0.8 {
-                return
-            }
+        if suppressNextWorkflowTap {
+            suppressNextWorkflowTap = false
+            return
         }
 
         if workflow.kind == .autoPasteSync {
