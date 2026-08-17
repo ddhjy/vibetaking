@@ -247,7 +247,7 @@ struct ContentView: View {
         .frame(height: isFocusMode ? 56 : 46)
         .glassEffect(
             isFocusMode
-                ? .regular.tint(Design.primaryColor).interactive()
+                ? .regular.tint(Color.black).interactive()
                 : .regular.interactive(),
             in: Capsule()
         )
