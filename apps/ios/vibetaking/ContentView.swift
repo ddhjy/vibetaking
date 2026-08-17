@@ -198,7 +198,7 @@ struct ContentView: View {
                     .transition(accessoryTransition)
             }
 
-            trailingUtilityButton
+            clearDraftButton
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
@@ -206,24 +206,17 @@ struct ContentView: View {
         .sensoryFeedback(.impact(weight: .medium), trigger: isFocusMode)
     }
 
-    /// 右侧按钮保持同一身份：普通态是清除，专注态只换图标。
-    private var trailingUtilityButton: some View {
-        Button {
-            if isFocusMode {
-                exitFocusMode()
-            } else {
-                clearText()
-            }
-        } label: {
-            Image(systemName: isFocusMode ? "arrow.down.right.and.arrow.up.left" : "xmark")
-                .font(.system(size: isFocusMode ? 16 : 17, weight: .medium))
+    /// 右侧始终是清除草稿；退出专注改由长按 Workflow 完成。
+    private var clearDraftButton: some View {
+        Button(action: clearText) {
+            Image(systemName: "xmark")
+                .font(.system(size: 17, weight: .medium))
                 .frame(width: 20, height: 20)
-                .contentTransition(.symbolEffect(.replace))
         }
         .tint(.primary)
         .padding(14)
         .glassEffect(.regular.interactive(), in: Circle())
-        .accessibilityLabel(isFocusMode ? "退出专注模式" : "清除")
+        .accessibilityLabel("清除")
         .disabled(processingWorkflowId != nil)
     }
 
