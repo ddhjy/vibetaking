@@ -170,7 +170,7 @@ struct ContentView: View {
     }
     
     private var focusTransition: Animation {
-        .spring(response: 0.5, dampingFraction: 0.9)
+        .spring(response: 0.32, dampingFraction: 0.9)
     }
 
     private var accessoryTransition: AnyTransition {
