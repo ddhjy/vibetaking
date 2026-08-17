@@ -163,68 +163,110 @@ struct ContentView: View {
         .onChange(of: workflowManager.workflows) { _, _ in
             // 专注中的 Workflow 被删除或关闭时，清掉持久化的专注状态。
             guard !focusedWorkflowIDRaw.isEmpty, focusedWorkflow == nil else { return }
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            withAnimation(focusTransition) {
                 focusedWorkflowIDRaw = ""
             }
         }
     }
     
+    private var focusTransition: Animation {
+        .spring(response: 0.5, dampingFraction: 0.9)
+    }
+
+    private var accessoryTransition: AnyTransition {
+        .scale(scale: 0.55).combined(with: .opacity)
+    }
+
     private var bottomToolbar: some View {
-        GlassEffectContainer {
+        HStack(spacing: 12) {
             HStack(spacing: 12) {
-                if let workflow = focusedWorkflow {
-                    focusedWorkflowButton(for: workflow)
+                workflowControlGroup
 
-                    exitFocusModeButton
-                } else {
-                    HStack(spacing: 12) {
-                        workflowControlGroup
-
-                        if !tagManager.tags.isEmpty {
-                            tagButton
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Button("搜索", systemImage: "magnifyingglass", action: searchDraftInHistory)
-                        .labelStyle(.iconOnly)
-                        .tint(.primary)
-                        .padding(14)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                        .disabled(processingWorkflowId != nil)
-
-                    Button("清除", systemImage: "xmark", action: clearText)
-                        .labelStyle(.iconOnly)
-                        .tint(.primary)
-                        .padding(14)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                        .glassEffectID("trailingCircle", in: toolbarNamespace)
-                        .disabled(processingWorkflowId != nil)
+                if !isFocusMode, !tagManager.tags.isEmpty {
+                    tagButton
+                        .transition(accessoryTransition)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if !isFocusMode {
+                Button("搜索", systemImage: "magnifyingglass", action: searchDraftInHistory)
+                    .labelStyle(.iconOnly)
+                    .tint(.primary)
+                    .padding(14)
+                    .glassEffect(.regular.interactive(), in: Circle())
+                    .disabled(processingWorkflowId != nil)
+                    .transition(accessoryTransition)
+            }
+
+            trailingUtilityButton
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isFocusMode)
+        .animation(focusTransition, value: isFocusMode)
         .sensoryFeedback(.impact(weight: .medium), trigger: isFocusMode)
     }
 
-    /// 专注模式下的全宽主操作按钮：主题色玻璃 + 图标 + Workflow 名称。
+    /// 右侧按钮保持同一身份：普通态是清除，专注态只换图标。
+    private var trailingUtilityButton: some View {
+        Button {
+            if isFocusMode {
+                exitFocusMode()
+            } else {
+                clearText()
+            }
+        } label: {
+            Image(systemName: isFocusMode ? "arrow.down.right.and.arrow.up.left" : "xmark")
+                .font(.system(size: isFocusMode ? 16 : 17, weight: .medium))
+                .frame(width: 20, height: 20)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .tint(.primary)
+        .padding(14)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .accessibilityLabel(isFocusMode ? "退出专注模式" : "清除")
+        .disabled(processingWorkflowId != nil)
+    }
+
+    /// 同一颗胶囊就地变宽、上色；不再用 glassEffectID 做跨视图形变。
+    private var workflowControlGroup: some View {
+        HStack(spacing: 4) {
+            if !isFocusMode {
+                workflowSettingsButton
+                    .transition(accessoryTransition)
+            }
+
+            ForEach(workflowManager.openWorkflows) { workflow in
+                if !isFocusMode || focusedWorkflow?.id == workflow.id {
+                    Group {
+                        if isFocusMode {
+                            focusedWorkflowButton(for: workflow)
+                        } else {
+                            workflowButton(for: workflow)
+                        }
+                    }
+                    .transition(accessoryTransition)
+                }
+            }
+        }
+        .padding(.horizontal, isFocusMode ? 16 : 7)
+        .frame(maxWidth: isFocusMode ? .infinity : nil)
+        .frame(height: isFocusMode ? 56 : 46)
+        .glassEffect(
+            isFocusMode
+                ? .regular.tint(Design.primaryColor).interactive()
+                : .regular.interactive(),
+            in: Capsule()
+        )
+    }
+
+    /// 专注态主操作：坐在已有胶囊里，不再另起一层玻璃。
     private func focusedWorkflowButton(for workflow: Workflow) -> some View {
         Button {
             handleWorkflowTap(workflow)
         } label: {
             HStack(spacing: 10) {
-                Group {
-                    if visibleLoadingWorkflowId == workflow.id {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Image(systemName: workflow.icon)
-                            .font(.system(size: 20, weight: .semibold))
-                    }
-                }
-                .frame(width: 24, height: 24)
+                workflowGlyph(for: workflow, focused: true)
 
                 Text(workflow.name)
                     .font(.system(size: 17, weight: .semibold))
@@ -235,9 +277,8 @@ struct ContentView: View {
             .frame(height: 56)
             .contentShape(Capsule())
         }
+        .buttonStyle(.plain)
         .disabled(processingWorkflowId != nil)
-        .glassEffect(.regular.tint(Design.primaryColor).interactive(), in: Capsule())
-        .glassEffectID("workflowGroup", in: toolbarNamespace)
         .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.35).onEnded { _ in
                 exitFocusMode(fromLongPress: true)
@@ -247,34 +288,20 @@ struct ContentView: View {
         .accessibilityHint("长按退出专注模式")
     }
 
-    private var exitFocusModeButton: some View {
-        Button {
-            exitFocusMode()
-        } label: {
-            Image(systemName: "arrow.down.right.and.arrow.up.left")
-                .font(.system(size: 16, weight: .medium))
-                .frame(width: 20, height: 20)
-        }
-        .tint(.primary)
-        .padding(14)
-        .glassEffect(.regular.interactive(), in: Circle())
-        .glassEffectID("trailingCircle", in: toolbarNamespace)
-        .accessibilityLabel("退出专注模式")
-        .disabled(processingWorkflowId != nil)
-    }
-    
-    private var workflowControlGroup: some View {
-        HStack(spacing: 4) {
-            workflowSettingsButton
-            
-            ForEach(workflowManager.openWorkflows) { workflow in
-                workflowButton(for: workflow)
+    @ViewBuilder
+    private func workflowGlyph(for workflow: Workflow, focused: Bool) -> some View {
+        Group {
+            if visibleLoadingWorkflowId == workflow.id {
+                ProgressView()
+                    .tint(focused ? .white : .primary)
+                    .scaleEffect(focused ? 1 : 0.8)
+            } else {
+                Image(systemName: workflow.icon)
+                    .font(.system(size: focused ? 20 : 18, weight: focused ? .semibold : .medium))
             }
         }
-        .padding(.horizontal, 7)
-        .frame(height: 46)
-        .glassEffect(.regular.interactive(), in: Capsule())
-        .glassEffectID("workflowGroup", in: toolbarNamespace)
+        .frame(width: focused ? 24 : 20, height: focused ? 24 : 20)
+        .matchedGeometryEffect(id: "workflowGlyph-\(workflow.id.uuidString)", in: toolbarNamespace)
     }
 
     @ViewBuilder
@@ -348,16 +375,7 @@ struct ContentView: View {
         Button {
             handleWorkflowTap(workflow)
         } label: {
-            Group {
-                if visibleLoadingWorkflowId == workflow.id {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                } else {
-                    Image(systemName: workflow.icon)
-                        .font(.system(size: 18, weight: .medium))
-                }
-            }
-            .frame(width: 20, height: 20)
+            workflowGlyph(for: workflow, focused: false)
         }
         .disabled(processingWorkflowId != nil)
         .tint(workflowTintColor(for: workflow))
@@ -456,7 +474,7 @@ struct ContentView: View {
     private func enterFocusMode(_ workflow: Workflow) {
         guard workflow.kind == .manual, processingWorkflowId == nil else { return }
         lastFocusToggleAt = Date()
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+        withAnimation(focusTransition) {
             focusedWorkflowIDRaw = workflow.id.uuidString
         }
     }
@@ -466,7 +484,7 @@ struct ContentView: View {
         if fromLongPress {
             lastFocusToggleAt = Date()
         }
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+        withAnimation(focusTransition) {
             focusedWorkflowIDRaw = ""
         }
     }
