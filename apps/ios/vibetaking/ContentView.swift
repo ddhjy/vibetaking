@@ -26,6 +26,11 @@ struct ContentView: View {
     
     @State private var showWorkflowError = false
     @State private var inputSessionResetToken = 0
+
+    @AppStorage("focusedWorkflowID") private var focusedWorkflowIDRaw: String = ""
+    /// 长按切换专注模式后，用于吞掉同一次按压在松手时触发的 Button 点击。
+    @State private var lastFocusToggleAt: Date? = nil
+    @Namespace private var toolbarNamespace
     
     private var draftText: String {
         historyManager.currentDraft.text
@@ -38,6 +43,13 @@ struct ContentView: View {
     private var trimmedDraftText: String {
         draftText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    private var focusedWorkflow: Workflow? {
+        guard let id = UUID(uuidString: focusedWorkflowIDRaw) else { return nil }
+        return workflowManager.openWorkflows.first { $0.id == id && $0.kind == .manual }
+    }
+
+    private var isFocusMode: Bool { focusedWorkflow != nil }
 
     var body: some View {
         NavigationStack {
@@ -80,6 +92,7 @@ struct ContentView: View {
                     .id(AppToolbarIdentity.moreButton)
                 }
             }
+            .toolbar(isFocusMode ? .hidden : .automatic, for: .navigationBar)
 
             .navigationDestination(isPresented: $showHistory) {
                 HistoryView(initialSearchText: historySearchText)
@@ -147,36 +160,107 @@ struct ContentView: View {
         .onChange(of: isTextEditorFocused) { _, isFocused in
             UIApplication.shared.isIdleTimerDisabled = isFocused
         }
+        .onChange(of: workflowManager.workflows) { _, _ in
+            // 专注中的 Workflow 被删除或关闭时，清掉持久化的专注状态。
+            guard !focusedWorkflowIDRaw.isEmpty, focusedWorkflow == nil else { return }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                focusedWorkflowIDRaw = ""
+            }
+        }
     }
     
     private var bottomToolbar: some View {
-        HStack(spacing: 12) {
+        GlassEffectContainer {
             HStack(spacing: 12) {
-                workflowControlGroup
+                if let workflow = focusedWorkflow {
+                    focusedWorkflowButton(for: workflow)
 
-                if !tagManager.tags.isEmpty {
-                    tagButton
+                    exitFocusModeButton
+                } else {
+                    HStack(spacing: 12) {
+                        workflowControlGroup
+
+                        if !tagManager.tags.isEmpty {
+                            tagButton
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Button("搜索", systemImage: "magnifyingglass", action: searchDraftInHistory)
+                        .labelStyle(.iconOnly)
+                        .tint(.primary)
+                        .padding(14)
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .disabled(processingWorkflowId != nil)
+
+                    Button("清除", systemImage: "xmark", action: clearText)
+                        .labelStyle(.iconOnly)
+                        .tint(.primary)
+                        .padding(14)
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .glassEffectID("trailingCircle", in: toolbarNamespace)
+                        .disabled(processingWorkflowId != nil)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 16)
-            
-            Button("搜索", systemImage: "magnifyingglass", action: searchDraftInHistory)
-                .labelStyle(.iconOnly)
-                .tint(.primary)
-                .padding(14)
-                .glassEffect(.regular.interactive(), in: Circle())
-                .disabled(processingWorkflowId != nil)
-
-            Button("清除", systemImage: "xmark", action: clearText)
-                .labelStyle(.iconOnly)
-                .tint(.primary)
-                .padding(14)
-                .glassEffect(.regular.interactive(), in: Circle())
-                .disabled(processingWorkflowId != nil)
         }
-        .padding(.trailing, 16)
+        .padding(.horizontal, 16)
         .padding(.bottom, 8)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isFocusMode)
+        .sensoryFeedback(.impact(weight: .medium), trigger: isFocusMode)
+    }
+
+    /// 专注模式下的全宽主操作按钮：主题色玻璃 + 图标 + Workflow 名称。
+    private func focusedWorkflowButton(for workflow: Workflow) -> some View {
+        Button {
+            handleWorkflowTap(workflow)
+        } label: {
+            HStack(spacing: 10) {
+                Group {
+                    if visibleLoadingWorkflowId == workflow.id {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: workflow.icon)
+                            .font(.system(size: 20, weight: .semibold))
+                    }
+                }
+                .frame(width: 24, height: 24)
+
+                Text(workflow.name)
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .contentShape(Capsule())
+        }
+        .disabled(processingWorkflowId != nil)
+        .glassEffect(.regular.tint(Design.primaryColor).interactive(), in: Capsule())
+        .glassEffectID("workflowGroup", in: toolbarNamespace)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                exitFocusMode(fromLongPress: true)
+            }
+        )
+        .accessibilityLabel("\(workflow.name)，专注模式")
+        .accessibilityHint("长按退出专注模式")
+    }
+
+    private var exitFocusModeButton: some View {
+        Button {
+            exitFocusMode()
+        } label: {
+            Image(systemName: "arrow.down.right.and.arrow.up.left")
+                .font(.system(size: 16, weight: .medium))
+                .frame(width: 20, height: 20)
+        }
+        .tint(.primary)
+        .padding(14)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .glassEffectID("trailingCircle", in: toolbarNamespace)
+        .accessibilityLabel("退出专注模式")
+        .disabled(processingWorkflowId != nil)
     }
     
     private var workflowControlGroup: some View {
@@ -190,6 +274,7 @@ struct ContentView: View {
         .padding(.horizontal, 7)
         .frame(height: 46)
         .glassEffect(.regular.interactive(), in: Capsule())
+        .glassEffectID("workflowGroup", in: toolbarNamespace)
     }
 
     @ViewBuilder
@@ -278,7 +363,13 @@ struct ContentView: View {
         .tint(workflowTintColor(for: workflow))
         .frame(width: 44, height: 44)
         .contentShape(Circle())
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                enterFocusMode(workflow)
+            }
+        )
         .accessibilityLabel(workflowAccessibilityLabel(for: workflow))
+        .accessibilityHint(workflow.kind == .manual ? "长按进入专注模式" : "")
     }
     
     private var fullScreenEditor: some View {
@@ -362,7 +453,33 @@ struct ContentView: View {
         }
     }
     
+    private func enterFocusMode(_ workflow: Workflow) {
+        guard workflow.kind == .manual, processingWorkflowId == nil else { return }
+        lastFocusToggleAt = Date()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            focusedWorkflowIDRaw = workflow.id.uuidString
+        }
+    }
+
+    private func exitFocusMode(fromLongPress: Bool = false) {
+        guard isFocusMode, processingWorkflowId == nil else { return }
+        if fromLongPress {
+            lastFocusToggleAt = Date()
+        }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            focusedWorkflowIDRaw = ""
+        }
+    }
+
     private func handleWorkflowTap(_ workflow: Workflow) {
+        // 长按切换专注模式后，同一次按压松手可能再触发一次点击，这里吞掉它，避免误执行。
+        if let toggleAt = lastFocusToggleAt {
+            lastFocusToggleAt = nil
+            if Date().timeIntervalSince(toggleAt) < 0.8 {
+                return
+            }
+        }
+
         if workflow.kind == .autoPasteSync {
             toggleAutoPasteWorkflow(workflow)
             return
