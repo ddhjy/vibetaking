@@ -124,10 +124,10 @@ struct ContentView: View {
             )) { request in
                 OffloadPermissionDialog(request: request)
             }
-            .alert("Workflow 执行出错", isPresented: $showWorkflowError) {
-                Button("确定") { workflowError = nil }
+            .alert("处理失败", isPresented: $showWorkflowError) {
+                Button("好") { workflowError = nil }
             } message: {
-                Text(workflowError?.localizedDescription ?? "出了点问题，请稍后再试")
+                Text(workflowError?.localizedDescription ?? "请检查网络后再试一次")
             }
 
         }

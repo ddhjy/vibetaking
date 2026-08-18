@@ -192,7 +192,7 @@ struct HistoryView: View {
     }
 
     private var searchPrompt: String {
-        isSearchActive ? "多个关键词用空格分隔" : "搜索内容或标签"
+        isSearchActive ? "空格分隔多个关键词" : "搜索内容或标签"
     }
     
     private func rebuildListCacheAsync() {
@@ -396,7 +396,7 @@ struct HistoryView: View {
         .onChange(of: historyManager.items) { _, _ in
             rebuildListCacheAsync()
         }
-        .alert("删除 \(selectedItems.count) 条记录？", isPresented: $showClearConfirmation) {
+        .alert("确定删除 \(selectedItems.count) 条记录？", isPresented: $showClearConfirmation) {
             Button("取消", role: .cancel) { }
             Button("删除", role: .destructive) {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -647,11 +647,11 @@ struct HistoryView: View {
             .scaleEffect(appearAnimation ? 1 : 0.8)
             
             VStack(spacing: 8) {
-                Text("还没有记录")
+                Text("从第一条想法开始")
                     .font(.title3.bold())
                     .foregroundStyle(Color(.label))
                 
-                Text("在主页写下内容，点击保存即可")
+                Text("回到主页，写完点击按钮即可保存")
                     .font(.subheadline)
                     .foregroundStyle(Color(.secondaryLabel))
             }
@@ -678,7 +678,7 @@ struct HistoryView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(Color(.tertiaryLabel))
             
-            Text("当前筛选下没有记录")
+            Text("没有符合条件的记录")
                 .font(.callout)
                 .foregroundStyle(Color(.secondaryLabel))
         }
@@ -691,7 +691,7 @@ struct HistoryView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(Color(.tertiaryLabel))
             
-            Text("没有找到「\(effectiveSearchText)」，试试其他关键词")
+            Text("未找到「\(effectiveSearchText)」，换个词试试")
                 .font(.callout)
                 .foregroundStyle(Color(.secondaryLabel))
         }

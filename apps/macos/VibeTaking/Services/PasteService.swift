@@ -195,7 +195,6 @@ enum PasteService {
 
     static func copyAndPaste(
         text: String,
-        autoSend: Bool,
         targetPID: pid_t? = nil,
         preserveExistingClipboard: Bool = false
     ) {
@@ -204,21 +203,12 @@ enum PasteService {
 
         if performPasteMenuAction(targetPID: targetPID) {
             schedulePasteboardRestore(pasteboardSnapshot)
-            if autoSend {
-                usleep(150_000)
-                simulateSend()
-            }
             return
         }
 
         usleep(50_000)
         simulatePaste()
         schedulePasteboardRestore(pasteboardSnapshot)
-
-        if autoSend {
-            usleep(150_000)
-            simulateSend()
-        }
     }
 
     static func send() {

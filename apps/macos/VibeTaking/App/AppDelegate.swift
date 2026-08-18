@@ -1,6 +1,5 @@
 import Cocoa
 import ApplicationServices
-import Carbon.HIToolbox
 import SystemConfiguration
 
 private struct DraftHistoryEntry: Codable {
@@ -120,34 +119,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return formatter
     }()
 
-    private struct ShortcutConfig {
-        let key: String
-        let keyCode: UInt32
-        let modifiers: NSEvent.ModifierFlags
-    }
-
-    private enum GlobalShortcutAction: UInt32, CaseIterable {
-        case autoSendToggle = 1
-
-        var defaultsPrefix: String {
-            switch self {
-            case .autoSendToggle: return "autoSend"
-            }
-        }
-
-        var menuTitlePrefix: String {
-            switch self {
-            case .autoSendToggle: return "自动发送"
-            }
-        }
-
-        var configurationTitle: String {
-            switch self {
-            case .autoSendToggle: return "设置\u{201C}自动发送\u{201D}快捷键"
-            }
-        }
-    }
-
     private var statusItem: NSStatusItem!
     private var statusMenu: NSMenu!
     private var settingsWindowController: SettingsWindowController?
@@ -155,27 +126,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var titleItem: NSMenuItem!
     private var ipItem: NSMenuItem!
     private var portItem: NSMenuItem!
-    private var toggleItem: NSMenuItem!
     private var historyItem: NSMenuItem!
-    private var autoSendShortcutItem: NSMenuItem!
     private var accessibilityItem: NSMenuItem!
 
     private var port: UInt16 = 7788
-    private var autoSend = false
     private var launchAtLogin = false
     private var server: HTTPServer?
     private var serverRunning = false
     private let bonjourAdvertiser = BonjourAdvertiser()
     private var ipTitleResetWorkItem: DispatchWorkItem?
-    private var hotKeyRefs: [GlobalShortcutAction: EventHotKeyRef] = [:]
-    private var hotKeyHandler: EventHandlerRef?
 
     private let historyStore = DraftHistoryStore()
     private var historyEntries: [DraftHistoryEntry] = []
     private var historyWindowController: DraftHistoryWindowController?
-
-    private let supportedShortcutModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
-    private let globalHotKeySignature: OSType = 0x41505348 // APSH
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         historyEntries = historyStore.load()
@@ -230,26 +193,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        toggleItem = NSMenuItem(title: "自动发送", action: #selector(toggleAutoSend(_:)), keyEquivalent: "")
-        toggleItem.target = self
-        toggleItem.state = autoSend ? .on : .off
-        menu.addItem(toggleItem)
-
         historyItem = NSMenuItem(title: "查看历史记录", action: #selector(showHistoryWindow(_:)), keyEquivalent: "")
         historyItem.target = self
         menu.addItem(historyItem)
-
-        let shortcutSubmenu = NSMenu()
-
-        autoSendShortcutItem = NSMenuItem(title: "自动发送：未设置", action: #selector(configureAutoSendShortcut(_:)), keyEquivalent: "")
-        autoSendShortcutItem.target = self
-        shortcutSubmenu.addItem(autoSendShortcutItem)
-
-        let shortcutItem = NSMenuItem(title: "快捷键", action: nil, keyEquivalent: "")
-        shortcutItem.submenu = shortcutSubmenu
-        menu.addItem(shortcutItem)
-
-        applyShortcutsFromDefaults()
 
         menu.addItem(.separator())
 
@@ -268,7 +214,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateIcon() {
-        statusItem.button?.image = StatusBarIcon.make(autoSend: autoSend)
+        statusItem.button?.image = StatusBarIcon.make()
     }
 
     private func refreshHistoryWindow() {
@@ -390,14 +336,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             viewController.onToggleLaunchAtLogin = { [weak self] isEnabled in
                 self?.setLaunchAtLoginState(isEnabled)
             }
-            viewController.onToggleAutoSend = { [weak self] isEnabled in
-                self?.setAutoSendState(isEnabled)
-            }
             viewController.onShowHistory = { [weak self] in
                 self?.showHistoryWindow(nil)
-            }
-            viewController.onConfigureAutoSendShortcut = { [weak self] in
-                self?.configureShortcut(for: .autoSendToggle)
             }
             viewController.onOpenAccessibilitySettings = { [weak self] in
                 self?.openAccessibilitySettings(NSMenuItem())
@@ -417,8 +357,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ipSummary: ipSummaryLines().joined(separator: "\n"),
             port: port,
             launchAtLogin: launchAtLogin,
-            autoSend: autoSend,
-            autoSendShortcut: shortcutSummary(for: .autoSendToggle),
             accessibilityGranted: checkAccessibilityPermission()
         )
     }
@@ -465,29 +403,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             stopServer()
             startServer()
         }
-    }
-
-    // MARK: - Auto Send
-
-    @objc private func toggleAutoSend(_ sender: NSMenuItem) {
-        toggleAutoSendState()
-    }
-
-    private func toggleAutoSendState() {
-        setAutoSendState(!autoSend)
-    }
-
-    private func setAutoSendState(_ isEnabled: Bool) {
-        guard autoSend != isEnabled else {
-            refreshSettingsWindow()
-            return
-        }
-
-        autoSend = isEnabled
-        toggleItem.state = autoSend ? .on : .off
-        server?.autoSend = autoSend
-        updateIcon()
-        refreshSettingsWindow()
     }
 
     // MARK: - Launch At Login
@@ -611,305 +526,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
 
-    // MARK: - Shortcut Configuration
-
-    @objc private func configureAutoSendShortcut(_ sender: NSMenuItem) {
-        configureShortcut(for: .autoSendToggle)
-    }
-
-    private func configureShortcut(for action: GlobalShortcutAction) {
-        let currentShortcut = currentShortcut(for: action)
-        var selectedShortcut: ShortcutConfig? = currentShortcut
-
-        let alert = NSAlert()
-        alert.messageText = action.configurationTitle
-        alert.informativeText = "按下组合键即可录入，Delete 清除"
-        alert.addButton(withTitle: "设定")
-        alert.addButton(withTitle: "取消")
-
-        let inputField = ShortcutCaptureField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-        inputField.placeholderString = "按下组合键…"
-        inputField.isEditable = false
-        inputField.isSelectable = false
-        inputField.focusRingType = .exterior
-        inputField.allowedModifiers = supportedShortcutModifiers
-        inputField.stringValue = currentShortcut.map { shortcutDisplay(key: $0.key, modifiers: $0.modifiers) } ?? "无"
-        inputField.onCapture = { [weak self, weak inputField] captured in
-            guard let self else { return }
-            selectedShortcut = captured.map {
-                ShortcutConfig(key: $0.key, keyCode: $0.keyCode, modifiers: $0.modifiers)
-            }
-            inputField?.stringValue = captured.map {
-                self.shortcutDisplay(key: $0.key, modifiers: $0.modifiers)
-            } ?? "无"
-        }
-
-        alert.accessoryView = inputField
-        alert.window.initialFirstResponder = inputField
-
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return }
-
-        if let selectedShortcut {
-            saveShortcut(selectedShortcut, for: action)
-        } else {
-            clearShortcut(for: action)
-        }
-    }
-
     @objc private func quitApp(_ sender: NSMenuItem) {
-        unregisterAllGlobalHotKeys()
         stopServer()
         NSApplication.shared.terminate(self)
-    }
-
-    // MARK: - Shortcut Persistence
-
-    private func applyShortcutsFromDefaults() {
-        for action in GlobalShortcutAction.allCases {
-            applyShortcutFromDefaults(for: action)
-        }
-    }
-
-    private func applyShortcutFromDefaults(for action: GlobalShortcutAction) {
-        guard let shortcut = currentShortcut(for: action) else {
-            unregisterGlobalHotKey(for: action)
-            clearShortcutOnMenuOnly(for: action)
-            return
-        }
-
-        unregisterGlobalHotKey(for: action)
-        if registerGlobalHotKey(shortcut, for: action) {
-            applyShortcutToMenu(shortcut, for: action)
-        } else {
-            shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix)：\(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))（冲突）"
-            print("Failed to register global shortcut for \(action.menuTitlePrefix): \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))")
-        }
-        refreshSettingsWindow()
-    }
-
-    private func saveShortcut(_ shortcut: ShortcutConfig, for action: GlobalShortcutAction) {
-        let previousShortcut = currentShortcut(for: action)
-
-        unregisterGlobalHotKey(for: action)
-        guard registerGlobalHotKey(shortcut, for: action) else {
-            if let previousShortcut {
-                _ = registerGlobalHotKey(previousShortcut, for: action)
-                applyShortcutToMenu(previousShortcut, for: action)
-            } else {
-                clearShortcutOnMenuOnly(for: action)
-            }
-            showGlobalShortcutUnavailableError(for: action)
-            return
-        }
-
-        let defaults = UserDefaults.standard
-        defaults.set(shortcut.key, forKey: shortcutDefaultsKey(for: action, suffix: "Key"))
-        defaults.set(Int(shortcut.keyCode), forKey: shortcutDefaultsKey(for: action, suffix: "KeyCode"))
-        defaults.set(Int(shortcut.modifiers.rawValue), forKey: shortcutDefaultsKey(for: action, suffix: "Modifiers"))
-        applyShortcutToMenu(shortcut, for: action)
-        refreshSettingsWindow()
-    }
-
-    private func clearShortcut(for action: GlobalShortcutAction) {
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: shortcutDefaultsKey(for: action, suffix: "Key"))
-        defaults.removeObject(forKey: shortcutDefaultsKey(for: action, suffix: "KeyCode"))
-        defaults.removeObject(forKey: shortcutDefaultsKey(for: action, suffix: "Modifiers"))
-        unregisterGlobalHotKey(for: action)
-        clearShortcutOnMenuOnly(for: action)
-        refreshSettingsWindow()
-    }
-
-    private func clearShortcutOnMenuOnly(for action: GlobalShortcutAction) {
-        shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix)：未设置"
-    }
-
-    private func applyShortcutToMenu(_ shortcut: ShortcutConfig, for action: GlobalShortcutAction) {
-        shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix)：\(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))"
-    }
-
-    private func shortcutMenuItem(for action: GlobalShortcutAction) -> NSMenuItem? {
-        switch action {
-        case .autoSendToggle: return autoSendShortcutItem
-        }
-    }
-
-    private func shortcutDefaultsKey(for action: GlobalShortcutAction, suffix: String) -> String {
-        "\(action.defaultsPrefix)Shortcut\(suffix)"
-    }
-
-    private func currentShortcut(for action: GlobalShortcutAction) -> ShortcutConfig? {
-        let defaults = UserDefaults.standard
-        guard let key = defaults.string(forKey: shortcutDefaultsKey(for: action, suffix: "Key")), !key.isEmpty else {
-            return nil
-        }
-
-        let keyCode: UInt32
-        if let keyCodeNumber = defaults.object(forKey: shortcutDefaultsKey(for: action, suffix: "KeyCode")) as? NSNumber {
-            keyCode = keyCodeNumber.uint32Value
-        } else if let legacyKeyCode = legacyKeyCode(for: key) {
-            keyCode = legacyKeyCode
-        } else {
-            return nil
-        }
-
-        let rawModifiers = defaults.integer(forKey: shortcutDefaultsKey(for: action, suffix: "Modifiers"))
-        let modifiers = NSEvent.ModifierFlags(rawValue: UInt(rawModifiers)).intersection(supportedShortcutModifiers)
-        return ShortcutConfig(key: key, keyCode: keyCode, modifiers: modifiers)
-    }
-
-    // MARK: - Global Hot Keys
-
-    private func registerGlobalHotKey(_ shortcut: ShortcutConfig, for action: GlobalShortcutAction) -> Bool {
-        installGlobalHotKeyHandlerIfNeeded()
-
-        let hotKeyID = EventHotKeyID(signature: globalHotKeySignature, id: action.rawValue)
-        var hotKeyRef: EventHotKeyRef?
-        let status = RegisterEventHotKey(
-            shortcut.keyCode,
-            carbonModifiers(from: shortcut.modifiers),
-            hotKeyID,
-            GetApplicationEventTarget(),
-            0,
-            &hotKeyRef
-        )
-        if status == noErr, let hotKeyRef {
-            hotKeyRefs[action] = hotKeyRef
-        }
-        return status == noErr
-    }
-
-    private func unregisterGlobalHotKey(for action: GlobalShortcutAction) {
-        guard let hotKeyRef = hotKeyRefs[action] else { return }
-        UnregisterEventHotKey(hotKeyRef)
-        hotKeyRefs[action] = nil
-    }
-
-    private func unregisterAllGlobalHotKeys() {
-        for action in GlobalShortcutAction.allCases {
-            unregisterGlobalHotKey(for: action)
-        }
-    }
-
-    private func installGlobalHotKeyHandlerIfNeeded() {
-        guard hotKeyHandler == nil else { return }
-
-        var eventSpec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let userData = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        let callback: EventHandlerUPP = { _, event, userData in
-            guard let event, let userData else { return noErr }
-            let appDelegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
-            return appDelegate.handleGlobalHotKeyEvent(event)
-        }
-
-        InstallEventHandler(GetApplicationEventTarget(), callback, 1, &eventSpec, userData, &hotKeyHandler)
-    }
-
-    private func handleGlobalHotKeyEvent(_ event: EventRef) -> OSStatus {
-        var hotKeyID = EventHotKeyID()
-        let status = GetEventParameter(
-            event,
-            EventParamName(kEventParamDirectObject),
-            EventParamType(typeEventHotKeyID),
-            nil,
-            MemoryLayout<EventHotKeyID>.size,
-            nil,
-            &hotKeyID
-        )
-
-        guard status == noErr else { return status }
-        guard hotKeyID.signature == globalHotKeySignature,
-              let action = GlobalShortcutAction(rawValue: hotKeyID.id) else { return noErr }
-
-        DispatchQueue.main.async { [weak self] in
-            self?.performGlobalShortcutAction(action)
-        }
-        return noErr
-    }
-
-    private func performGlobalShortcutAction(_ action: GlobalShortcutAction) {
-        switch action {
-        case .autoSendToggle:
-            toggleAutoSendState()
-        }
-    }
-
-    private func carbonModifiers(from modifiers: NSEvent.ModifierFlags) -> UInt32 {
-        var result: UInt32 = 0
-        if modifiers.contains(.command) { result |= UInt32(cmdKey) }
-        if modifiers.contains(.control) { result |= UInt32(controlKey) }
-        if modifiers.contains(.option) { result |= UInt32(optionKey) }
-        if modifiers.contains(.shift) { result |= UInt32(shiftKey) }
-        return result
-    }
-
-    private func legacyKeyCode(for key: String) -> UInt32? {
-        switch key.lowercased() {
-        case "a": return UInt32(kVK_ANSI_A)
-        case "b": return UInt32(kVK_ANSI_B)
-        case "c": return UInt32(kVK_ANSI_C)
-        case "d": return UInt32(kVK_ANSI_D)
-        case "e": return UInt32(kVK_ANSI_E)
-        case "f": return UInt32(kVK_ANSI_F)
-        case "g": return UInt32(kVK_ANSI_G)
-        case "h": return UInt32(kVK_ANSI_H)
-        case "i": return UInt32(kVK_ANSI_I)
-        case "j": return UInt32(kVK_ANSI_J)
-        case "k": return UInt32(kVK_ANSI_K)
-        case "l": return UInt32(kVK_ANSI_L)
-        case "m": return UInt32(kVK_ANSI_M)
-        case "n": return UInt32(kVK_ANSI_N)
-        case "o": return UInt32(kVK_ANSI_O)
-        case "p": return UInt32(kVK_ANSI_P)
-        case "q": return UInt32(kVK_ANSI_Q)
-        case "r": return UInt32(kVK_ANSI_R)
-        case "s": return UInt32(kVK_ANSI_S)
-        case "t": return UInt32(kVK_ANSI_T)
-        case "u": return UInt32(kVK_ANSI_U)
-        case "v": return UInt32(kVK_ANSI_V)
-        case "w": return UInt32(kVK_ANSI_W)
-        case "x": return UInt32(kVK_ANSI_X)
-        case "y": return UInt32(kVK_ANSI_Y)
-        case "z": return UInt32(kVK_ANSI_Z)
-        case "0": return UInt32(kVK_ANSI_0)
-        case "1": return UInt32(kVK_ANSI_1)
-        case "2": return UInt32(kVK_ANSI_2)
-        case "3": return UInt32(kVK_ANSI_3)
-        case "4": return UInt32(kVK_ANSI_4)
-        case "5": return UInt32(kVK_ANSI_5)
-        case "6": return UInt32(kVK_ANSI_6)
-        case "7": return UInt32(kVK_ANSI_7)
-        case "8": return UInt32(kVK_ANSI_8)
-        case "9": return UInt32(kVK_ANSI_9)
-        default: return nil
-        }
-    }
-
-    private func showGlobalShortcutUnavailableError(for action: GlobalShortcutAction? = nil) {
-        let alert = NSAlert()
-        alert.messageText = "快捷键冲突"
-        alert.informativeText = "该快捷键已被占用，请选择其他组合"
-        alert.addButton(withTitle: "重新设置")
-        alert.addButton(withTitle: "取消")
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn, let action {
-            configureShortcut(for: action)
-        }
-    }
-
-    private func shortcutDisplay(key: String, modifiers: NSEvent.ModifierFlags) -> String {
-        var symbols = ""
-        if modifiers.contains(.control) { symbols += "⌃" }
-        if modifiers.contains(.option) { symbols += "⌥" }
-        if modifiers.contains(.shift) { symbols += "⇧" }
-        if modifiers.contains(.command) { symbols += "⌘" }
-        return symbols + key.uppercased()
-    }
-
-    private func shortcutSummary(for action: GlobalShortcutAction) -> String {
-        guard let shortcut = currentShortcut(for: action) else { return "未设置" }
-        return shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers)
     }
 
     // MARK: - Network Info
@@ -1034,14 +653,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func startServer() {
         guard !serverRunning else { return }
         let srv = HTTPServer()
-        srv.autoSend = autoSend
-        srv.onPasteRequest = { [weak self] text, autoSend in
+        srv.onPasteRequest = { [weak self] text in
             DispatchQueue.main.async {
                 self?.appendHistoryEntry(text: text, reason: .directPaste)
             }
             PasteService.copyAndPaste(
                 text: text,
-                autoSend: autoSend,
                 preserveExistingClipboard: true
             )
         }
@@ -1080,7 +697,7 @@ private final class SettingsWindowController: NSWindowController {
         self.settingsViewController = settingsViewController
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 600),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 520),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -1088,8 +705,8 @@ private final class SettingsWindowController: NSWindowController {
         window.title = "设置"
         window.contentViewController = settingsViewController
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 520, height: 600))
-        window.contentMinSize = NSSize(width: 520, height: 540)
+        window.setContentSize(NSSize(width: 520, height: 520))
+        window.contentMinSize = NSSize(width: 520, height: 460)
         window.center()
         super.init(window: window)
     }
@@ -1103,16 +720,12 @@ private final class SettingsWindowController: NSWindowController {
         ipSummary: String,
         port: UInt16,
         launchAtLogin: Bool,
-        autoSend: Bool,
-        autoSendShortcut: String,
         accessibilityGranted: Bool
     ) {
         settingsViewController.update(
             ipSummary: ipSummary,
             port: port,
             launchAtLogin: launchAtLogin,
-            autoSend: autoSend,
-            autoSendShortcut: autoSendShortcut,
             accessibilityGranted: accessibilityGranted
         )
     }
@@ -1123,21 +736,17 @@ private final class SettingsViewController: NSViewController {
     var onCopyNetworkInfo: (() -> Void)?
     var onChangePort: (() -> Void)?
     var onToggleLaunchAtLogin: ((Bool) -> Void)?
-    var onToggleAutoSend: ((Bool) -> Void)?
     var onShowHistory: (() -> Void)?
-    var onConfigureAutoSendShortcut: (() -> Void)?
     var onOpenAccessibilitySettings: (() -> Void)?
 
     private let ipValueLabel = SettingsViewController.makeDetailLabel()
     private let portValueLabel = SettingsViewController.makeDetailLabel()
     private let launchAtLoginSwitch = NSSwitch(frame: .zero)
-    private let autoSendSwitch = NSSwitch(frame: .zero)
-    private let autoSendShortcutValueLabel = SettingsViewController.makeDetailLabel()
     private let accessibilityValueLabel = SettingsViewController.makeDetailLabel()
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 600))
-        preferredContentSize = NSSize(width: 520, height: 600)
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 520))
+        preferredContentSize = NSSize(width: 520, height: 520)
 
         let aboutButton = Self.makeActionButton(title: "关于")
         aboutButton.target = self
@@ -1146,7 +755,7 @@ private final class SettingsViewController: NSViewController {
         let titleLabel = NSTextField(labelWithString: "设置")
         titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
 
-        let subtitleLabel = NSTextField(labelWithString: "管理连接、快捷键与系统权限")
+        let subtitleLabel = NSTextField(labelWithString: "管理连接与系统权限")
         subtitleLabel.font = .systemFont(ofSize: 12)
         subtitleLabel.textColor = .secondaryLabelColor
 
@@ -1177,25 +786,13 @@ private final class SettingsViewController: NSViewController {
         launchAtLoginSwitch.target = self
         launchAtLoginSwitch.action = #selector(handleLaunchAtLoginChanged)
 
-        autoSendSwitch.target = self
-        autoSendSwitch.action = #selector(handleAutoSendChanged)
-
         let historyButton = Self.makeActionButton(title: "查看")
         historyButton.target = self
         historyButton.action = #selector(handleShowHistory)
 
         let behaviorCard = Self.makeCard(rows: [
             makeRow(title: "开机启动", detail: Self.makeHintLabel("登录 macOS 后自动启动随心记"), accessory: launchAtLoginSwitch),
-            makeRow(title: "自动发送", detail: Self.makeHintLabel("粘贴后自动按下回车发送"), accessory: autoSendSwitch),
-            makeRow(title: "历史记录", detail: Self.makeHintLabel("回顾已粘贴或被替换的草稿"), accessory: historyButton)
-        ])
-
-        let autoSendShortcutButton = Self.makeActionButton(title: "设置…")
-        autoSendShortcutButton.target = self
-        autoSendShortcutButton.action = #selector(handleConfigureAutoSendShortcut)
-
-        let shortcutsCard = Self.makeCard(rows: [
-            makeRow(title: "自动发送", detail: autoSendShortcutValueLabel, accessory: autoSendShortcutButton)
+            makeRow(title: "历史记录", detail: Self.makeHintLabel("回顾已粘贴的文本"), accessory: historyButton)
         ])
 
         let accessibilityButton = Self.makeActionButton(title: "打开系统设置")
@@ -1217,7 +814,6 @@ private final class SettingsViewController: NSViewController {
         let sections: [(String, NSView)] = [
             ("网络", networkCard),
             ("行为", behaviorCard),
-            ("快捷键", shortcutsCard),
             ("权限", permissionsCard)
         ]
 
@@ -1258,15 +854,11 @@ private final class SettingsViewController: NSViewController {
         ipSummary: String,
         port: UInt16,
         launchAtLogin: Bool,
-        autoSend: Bool,
-        autoSendShortcut: String,
         accessibilityGranted: Bool
     ) {
         ipValueLabel.stringValue = ipSummary.isEmpty ? "未检测到局域网地址" : ipSummary
         portValueLabel.stringValue = "\(port)"
         launchAtLoginSwitch.state = launchAtLogin ? .on : .off
-        autoSendSwitch.state = autoSend ? .on : .off
-        autoSendShortcutValueLabel.stringValue = autoSendShortcut
 
         accessibilityValueLabel.stringValue = accessibilityGranted ? "已授权" : "未授权"
         accessibilityValueLabel.textColor = accessibilityGranted ? .systemGreen : .systemOrange
@@ -1276,9 +868,7 @@ private final class SettingsViewController: NSViewController {
     @objc private func handleCopyNetworkInfo() { onCopyNetworkInfo?() }
     @objc private func handleChangePort() { onChangePort?() }
     @objc private func handleLaunchAtLoginChanged() { onToggleLaunchAtLogin?(launchAtLoginSwitch.state == .on) }
-    @objc private func handleAutoSendChanged() { onToggleAutoSend?(autoSendSwitch.state == .on) }
     @objc private func handleShowHistory() { onShowHistory?() }
-    @objc private func handleConfigureAutoSendShortcut() { onConfigureAutoSendShortcut?() }
     @objc private func handleOpenAccessibilitySettings() { onOpenAccessibilitySettings?() }
 
     // MARK: - Row & Card Builders
@@ -1486,49 +1076,6 @@ private final class DraftHistoryViewController: NSViewController {
             textView.string = historyText
         }
         placeholderLabel.isHidden = hasHistory
-    }
-}
-
-// MARK: - Shortcut Capture Field
-
-private final class ShortcutCaptureField: NSTextField {
-    var onCapture: (((key: String, keyCode: UInt32, modifiers: NSEvent.ModifierFlags)?) -> Void)?
-    var allowedModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 51 || event.keyCode == 117 {
-            onCapture?(nil)
-            return
-        }
-
-        if event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 53 {
-            super.keyDown(with: event)
-            return
-        }
-
-        guard let chars = event.charactersIgnoringModifiers,
-              let scalar = chars.unicodeScalars.first,
-              scalar.isASCII,
-              !CharacterSet.controlCharacters.contains(scalar) else {
-            NSSound.beep()
-            return
-        }
-
-        let key = String(scalar).lowercased()
-        let keyCode = UInt32(event.keyCode)
-        let modifiers = event.modifierFlags.intersection(allowedModifiers)
-        onCapture?((key: key, keyCode: keyCode, modifiers: modifiers))
-    }
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 53 {
-            return super.performKeyEquivalent(with: event)
-        }
-
-        keyDown(with: event)
-        return true
     }
 }
 

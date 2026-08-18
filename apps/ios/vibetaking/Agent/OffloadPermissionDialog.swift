@@ -51,7 +51,7 @@ struct OffloadPermissionDialog: View {
                 .padding(.horizontal, 20)
             }
 
-            Text("本次会话内不再重复询问")
+            Text("同一会话内不会再次询问")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
 
@@ -117,7 +117,7 @@ struct OffloadPermissionSettingsView: View {
                     }
                 }
             } footer: {
-                Text("控制 AI 助手对设备能力的访问。「每次询问」在每个会话首次使用时弹窗确认；iOS 系统级权限弹窗仍会独立出现。")
+                Text("控制 AI 助手对设备能力的访问。选择「每次询问」后，首次使用时会弹窗确认。")
             }
         }
         .navigationTitle("设备权限")

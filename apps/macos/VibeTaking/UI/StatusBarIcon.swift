@@ -1,16 +1,9 @@
 import Cocoa
 
 enum StatusBarIcon {
-    static func make(autoSend: Bool) -> NSImage {
-        let symbolName: String
-        if autoSend {
-            symbolName = "doc.on.clipboard.fill"
-        } else {
-            symbolName = "doc.on.clipboard"
-        }
-
+    static func make() -> NSImage {
         let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "随心记")?
+        guard let image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "随心记")?
             .withSymbolConfiguration(config) else {
             return NSImage()
         }

@@ -322,9 +322,9 @@ struct AgentChatView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("问问你的速记库")
+            Text("向你的笔记提问")
                 .font(.headline)
-            Text("例如：\n· 上周我记了哪些关于工作的想法？\n· 把散落的读书笔记整理成一条新记录\n· 给最近没打标签的记录推荐标签")
+            Text("试试问：\n· 上周我记了哪些关于工作的想法？\n· 把散落的读书笔记整理成一条新记录\n· 给最近没打标签的记录推荐标签")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -406,7 +406,7 @@ struct AgentChatView: View {
 
     private var inputBar: some View {
         HStack(spacing: 10) {
-            TextField("向 AI 提问…", text: Bindable(viewModel).inputText, axis: .vertical)
+            TextField("输入你的问题…", text: Bindable(viewModel).inputText, axis: .vertical)
                 .lineLimit(1...4)
                 .focused($inputFocused)
                 .padding(.horizontal, 14)
@@ -453,7 +453,7 @@ struct AgentSessionListView: View {
         NavigationStack {
             List {
                 if store.sessions.isEmpty {
-                    Text("还没有历史会话")
+                    Text("还没有对话记录")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(store.sessions) { session in

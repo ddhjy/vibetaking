@@ -258,7 +258,7 @@ struct TagPickerView: View {
     
     private var emptyTagsView: some View {
         VStack(spacing: 12) {
-            Text("点击左上角 + 创建第一个标签")
+            Text("点击 + 创建你的第一个标签")
                 .font(.subheadline)
                 .foregroundStyle(Color(.secondaryLabel))
 
@@ -1018,7 +1018,7 @@ struct BatchTagPickerView: View {
             VStack(spacing: 0) {
                 if tagManager.tags.isEmpty {
                     VStack(spacing: 12) {
-                        Text("还没有标签，点击 + 创建")
+                        Text("还没有标签，点击 + 新建一个")
                             .font(.subheadline)
                             .foregroundStyle(Color(.secondaryLabel))
 

@@ -4,8 +4,7 @@ final class HTTPServer {
     private var listenSocket: Int32 = -1
     private var running = false
     private let queue = DispatchQueue(label: "com.vibetaking.httpserver", attributes: .concurrent)
-    var autoSend = false
-    var onPasteRequest: ((String, Bool) -> Void)?
+    var onPasteRequest: ((String) -> Void)?
     var onSendRequest: (() -> Void)?
 
     func start(port: UInt16) throws {
@@ -177,8 +176,7 @@ final class HTTPServer {
                 return
             }
 
-            let currentAutoSend = autoSend
-            onPasteRequest?(text, currentAutoSend)
+            onPasteRequest?(text)
             sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
 
         case "/send":

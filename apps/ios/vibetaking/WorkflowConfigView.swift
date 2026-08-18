@@ -320,7 +320,7 @@ struct WorkflowConfigView: View {
         } header: {
             Text("节点流水线")
         } footer: {
-            Text("执行时按从上到下顺序运行，可进入编辑模式拖动排序或删除。")
+            Text("节点从上到下依次执行。长按拖动可排序。")
         }
 
         Section {
@@ -533,7 +533,7 @@ private struct EmptyWorkflowNodesView: View {
             VStack(spacing: 4) {
                 Text("还没有节点")
                     .font(.headline)
-                Text("添加节点后，这个 Workflow 会按顺序处理当前草稿。")
+                Text("添加节点来定义这个 Workflow 对草稿的处理流程。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -788,7 +788,7 @@ struct DeviceBindingSection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(boundServiceName)
                             .font(.callout.weight(.medium))
-                        Text(isBoundDeviceOnline ? "在线" : "当前不在线，发送时会自动重试")
+                        Text(isBoundDeviceOnline ? "在线" : "离线，发送时自动重连")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -835,14 +835,14 @@ struct DeviceBindingSection: View {
         case .idle, .searching:
             HStack(spacing: 10) {
                 ProgressView()
-                Text("正在搜索附近的桌面端…")
+                Text("正在查找附近的 Mac…")
                     .foregroundStyle(.secondary)
             }
         case .ready:
             VStack(alignment: .leading, spacing: 6) {
-                Text("未找到附近的桌面端")
+                Text("未找到 Mac")
                     .font(.callout)
-                Text("请确认 Mac 已打开随心记、与 iPhone 在同一 Wi‑Fi，并在「设置 → 随心记 → 本地网络」中允许访问。")
+                Text("请确认 Mac 已打开随心记，且两台设备在同一 Wi‑Fi。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -853,7 +853,7 @@ struct DeviceBindingSection: View {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("请在「设置 → 隐私与安全性 → 本地网络」中允许随心记。")
+                Text("请在「设置 → 隐私与安全性 → 本地网络」中允许随心记访问。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -186,7 +186,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI 配置")
                 } footer: {
-                    Text("使用 Sub2API 网关，密钥会保存在钥匙串中。默认地址为 https://api.infingrow.asia/v1。")
+                    Text("密钥安全存储在系统钥匙串中。")
                 }
 
                 Section {
@@ -231,7 +231,7 @@ struct SettingsView: View {
                 } header: {
                     Text("模型")
                 } footer: {
-                    Text("模型列表来自 /v1/models，并会过滤掉图片模型。")
+                    Text("列表自动获取可用的文本生成模型。")
                 }
 
                 Section {
@@ -254,7 +254,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI 助手")
                 } footer: {
-                    Text("记忆保存在记录目录 _agent/memory/，Skills 放在 _skills/<名称>/SKILL.md，均随 iCloud 同步。设备权限控制 AI 对日历、提醒事项和剪贴板的访问。")
+                    Text("记忆与 Skills 通过 iCloud 自动同步。设备权限决定 AI 能否访问日历、提醒事项或剪贴板。")
                 }
 
                 Section {
@@ -282,7 +282,7 @@ struct SettingsView: View {
                 } header: {
                     Text("配置迁移")
                 } footer: {
-                    Text("导出为 JSON 文件（包含 AI 密钥）；导入后会覆盖当前 AI 与 Workflow 配置。")
+                    Text("导出含密钥，请妥善保管；导入会替换当前全部配置。")
                 }
             }
             .navigationTitle("设置")
@@ -388,7 +388,7 @@ struct SettingsView: View {
     private func loadModels() async {
         guard hasToken else {
             models = []
-            modelLoadError = "请先填写 AI 密钥"
+            modelLoadError = "需要先填写 API Key"
             return
         }
 
@@ -433,7 +433,7 @@ struct AgentSkillsSettingsView: View {
         List {
             if store.skills.isEmpty {
                 Section {
-                    Text("还没有 Skill。在记录目录下创建 _skills/<名称>/SKILL.md（带 YAML frontmatter 的 name 与 description），AI 助手会按需加载。兼容为 Claude / Codex 编写的 skill。")
+                    Text("还没有 Skill。可在「文件」App 的记录目录下添加 _skills/<名称>/SKILL.md，AI 会自动加载。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
