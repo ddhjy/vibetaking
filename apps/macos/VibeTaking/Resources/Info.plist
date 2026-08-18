@@ -29,7 +29,7 @@
         <string>_vibetaking._tcp</string>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>用于在局域网内发布同步服务、接收 iPhone 发来的文本，并回调手机清空草稿。</string>
+    <string>用于在局域网内发布粘贴服务，接收 iPhone 或其他设备发来的文本。</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>

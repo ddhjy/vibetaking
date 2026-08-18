@@ -1,18 +1,11 @@
 import Foundation
 
 final class HTTPServer {
-    struct DraftUpdate {
-        let text: String
-        let remoteAddress: String
-        let callbackPort: UInt16?
-    }
-
     private var listenSocket: Int32 = -1
     private var running = false
     private let queue = DispatchQueue(label: "com.vibetaking.httpserver", attributes: .concurrent)
     var autoSend = false
     var onPasteRequest: ((String, Bool) -> Void)?
-    var onDraftUpdate: ((DraftUpdate) -> Void)?
     var onSendRequest: (() -> Void)?
 
     func start(port: UInt16) throws {
@@ -71,12 +64,12 @@ final class HTTPServer {
             guard clientFd >= 0 else { continue }
 
             queue.async { [weak self] in
-                self?.handleClient(clientFd, clientAddr: clientAddr)
+                self?.handleClient(clientFd)
             }
         }
     }
 
-    private func handleClient(_ fd: Int32, clientAddr: sockaddr_in) {
+    private func handleClient(_ fd: Int32) {
         defer { close(fd) }
 
         var nosigpipe: Int32 = 1
@@ -188,36 +181,12 @@ final class HTTPServer {
             onPasteRequest?(text, currentAutoSend)
             sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
 
-        case "/draft":
-            guard contentType.contains("application/json"),
-                  let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
-                  let t = json["text"] as? String else {
-                sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid JSON body\", \"hint\": \"Send valid JSON with Content-Type: application/json\"}")
-                return
-            }
-
-            let callbackPort: UInt16?
-            if let callbackPortNumber = json["callbackPort"] as? NSNumber {
-                let value = callbackPortNumber.uint16Value
-                callbackPort = value == 0 ? nil : value
-            } else {
-                callbackPort = nil
-            }
-
-            let update = DraftUpdate(
-                text: t,
-                remoteAddress: clientIPAddress(from: clientAddr),
-                callbackPort: callbackPort
-            )
-            onDraftUpdate?(update)
-            sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
-
         case "/send":
             onSendRequest?()
             sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
 
         default:
-            sendResponse(fd: fd, status: 404, body: "{\"error\": \"not found\", \"hint\": \"POST to /, /draft, or /send\"}")
+            sendResponse(fd: fd, status: 404, body: "{\"error\": \"not found\", \"hint\": \"POST to / or /send\"}")
         }
     }
 
@@ -236,15 +205,6 @@ final class HTTPServer {
         _ = response.withCString { ptr in
             send(fd, ptr, strlen(ptr), 0)
         }
-    }
-
-    private func clientIPAddress(from addr: sockaddr_in) -> String {
-        var addr = addr
-        var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-        guard inet_ntop(AF_INET, &addr.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else {
-            return ""
-        }
-        return String(cString: buffer)
     }
 
     enum ServerError: Error, LocalizedError {

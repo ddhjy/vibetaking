@@ -239,7 +239,6 @@ class HistoryManager {
         }
         items[index].text = text
         saveDraft()
-        notifyDraftDidChange(text)
     }
 
     func clearDraft() {
@@ -250,7 +249,6 @@ class HistoryManager {
         }
         items[index].text = ""
         saveDraft()
-        notifyDraftDidChange("")
     }
 
     func restoreLastClearedDraft() {
@@ -258,7 +256,6 @@ class HistoryManager {
         items[index].text = lastClearedText
         lastClearedText = ""
         saveDraft()
-        notifyDraftDidChange(items[index].text)
     }
 
     func clearDraftTags() {
@@ -301,7 +298,6 @@ class HistoryManager {
         items.insert(newDraft, at: 0)
         
         TagManager.shared.refreshTags(from: savedItems)
-        notifyDraftDidChange(newDraft.text)
     }
     
     var savedItems: [HistoryItem] {
@@ -608,7 +604,6 @@ class HistoryManager {
         TagManager.shared.apply(snapshot: result.tagSnapshot)
         hasLoadedHistory = true
         isLoading = false
-        notifyDraftDidChange(mergedDraft.text)
     }
     
     private func generateMarkdownContent(text: String, description: String, tags: [String], createdAt: Date) -> String {
@@ -978,11 +973,6 @@ class HistoryManager {
         return NotesImportResult(importedCount: importedItems.count, skippedCount: skippedCount)
     }
 
-    private func notifyDraftDidChange(_ text: String) {
-        Task { @MainActor in
-            AutoPasteSyncManager.shared.scheduleDraftSync(text: text)
-        }
-    }
 }
 
 private struct ImportCandidate {

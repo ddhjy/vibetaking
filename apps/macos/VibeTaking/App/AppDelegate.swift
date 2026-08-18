@@ -126,45 +126,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let modifiers: NSEvent.ModifierFlags
     }
 
-    private enum RemoteDraftClearContext: Equatable {
-        case startInput
-        case paste
-    }
-
     private enum GlobalShortcutAction: UInt32, CaseIterable {
         case autoSendToggle = 1
-        case inputToggle = 2
-        case pasteDraft = 3
 
         var defaultsPrefix: String {
             switch self {
             case .autoSendToggle: return "autoSend"
-            case .inputToggle: return "inputToggle"
-            case .pasteDraft: return "pasteDraft"
             }
         }
 
         var menuTitlePrefix: String {
             switch self {
             case .autoSendToggle: return "自动发送"
-            case .inputToggle: return "输入切换"
-            case .pasteDraft: return "粘贴/发送"
             }
         }
 
         var configurationTitle: String {
             switch self {
             case .autoSendToggle: return "设置\u{201C}自动发送\u{201D}快捷键"
-            case .inputToggle: return "设置\u{201C}输入切换\u{201D}快捷键"
-            case .pasteDraft: return "设置\u{201C}粘贴/发送\u{201D}快捷键"
             }
         }
     }
 
     private var statusItem: NSStatusItem!
     private var statusMenu: NSMenu!
-    private var popover: NSPopover!
-    private var draftPanelController: DraftPanelViewController!
     private var settingsWindowController: SettingsWindowController?
 
     private var titleItem: NSMenuItem!
@@ -173,8 +158,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var toggleItem: NSMenuItem!
     private var historyItem: NSMenuItem!
     private var autoSendShortcutItem: NSMenuItem!
-    private var inputShortcutItem: NSMenuItem!
-    private var pasteShortcutItem: NSMenuItem!
     private var accessibilityItem: NSMenuItem!
 
     private var port: UInt16 = 7788
@@ -187,18 +170,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyRefs: [GlobalShortcutAction: EventHotKeyRef] = [:]
     private var hotKeyHandler: EventHandlerRef?
 
-    private var mirroredDraftText = ""
-    private var mirroredDraftSourceAddress: String?
-    private var mirroredDraftCallbackPort: UInt16?
-    private var draftStatusMessage = "点击\u{201C}开始输入\u{201D}接收手机文字"
     private let historyStore = DraftHistoryStore()
     private var historyEntries: [DraftHistoryEntry] = []
     private var historyWindowController: DraftHistoryWindowController?
-    private var lastActiveAppBeforePopover: NSRunningApplication?
-    private var pendingRemoteDraftClearContext: RemoteDraftClearContext?
-    private var isInputModeActive = false
-    private var isPopoverClosing = false
-    private var shouldReopenPopoverAfterClose = false
 
     private let supportedShortcutModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
     private let globalHotKeySignature: OSType = 0x41505348 // APSH
@@ -209,9 +183,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         configureStatusButton()
         buildMenu()
-        buildPopover()
         updateIcon()
-        refreshDraftPanel()
         startServer()
     }
 
@@ -273,14 +245,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         autoSendShortcutItem.target = self
         shortcutSubmenu.addItem(autoSendShortcutItem)
 
-        inputShortcutItem = NSMenuItem(title: "输入切换：未设置", action: #selector(configureInputShortcut(_:)), keyEquivalent: "")
-        inputShortcutItem.target = self
-        shortcutSubmenu.addItem(inputShortcutItem)
-
-        pasteShortcutItem = NSMenuItem(title: "粘贴/发送：未设置", action: #selector(configurePasteShortcut(_:)), keyEquivalent: "")
-        pasteShortcutItem.target = self
-        shortcutSubmenu.addItem(pasteShortcutItem)
-
         let shortcutItem = NSMenuItem(title: "快捷键", action: nil, keyEquivalent: "")
         shortcutItem.submenu = shortcutSubmenu
         menu.addItem(shortcutItem)
@@ -303,60 +267,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu = menu
     }
 
-    // MARK: - Popover
-
-    private func buildPopover() {
-        draftPanelController = DraftPanelViewController()
-        draftPanelController.onPrimaryAction = { [weak self] in
-            self?.performDraftPanelPrimaryAction()
-        }
-        draftPanelController.onStartInput = { [weak self] in
-            self?.toggleInputSession()
-        }
-        draftPanelController.onOpenSettings = { [weak self] in
-            self?.openSettingsWindowFromPanel()
-        }
-        draftPanelController.onDismiss = { [weak self] in
-            guard let self else { return }
-            if self.isInputModeActive {
-                self.cancelInputSession()
-            } else {
-                self.popover.performClose(nil)
-            }
-        }
-
-        popover = NSPopover()
-        popover.animates = true
-        popover.behavior = .transient
-        popover.delegate = self
-        popover.contentSize = NSSize(width: 360, height: 310)
-        popover.contentViewController = draftPanelController
-    }
-
     private func updateIcon() {
-        statusItem.button?.image = StatusBarIcon.make(
-            autoSend: autoSend,
-            running: serverRunning,
-            inputActive: isInputModeActive
-        )
-        updatePopoverBehavior()
+        statusItem.button?.image = StatusBarIcon.make(autoSend: autoSend)
     }
 
-    private func updatePopoverBehavior() {
-        popover?.behavior = isInputModeActive ? .applicationDefined : .transient
-    }
-
-    private func refreshDraftPanel() {
-        let hasMirroredDraft = !mirroredDraftText.isEmpty
-        draftPanelController?.update(
-            text: mirroredDraftText,
-            status: draftStatusMessage,
-            startInputButtonTitle: isInputModeActive ? "停止输入" : "开始输入",
-            primaryActionTitle: hasMirroredDraft ? "粘贴" : "发送",
-            canTriggerPrimaryAction: checkAccessibilityPermission(),
-            canStartInput: true
-        )
-
+    private func refreshHistoryWindow() {
         historyWindowController?.update(
             historyText: formattedHistoryText(),
             hasHistory: !historyEntries.isEmpty
@@ -366,56 +281,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Status Item Interaction
 
     @objc private func handleStatusItemClick(_ sender: Any?) {
-        guard let event = NSApp.currentEvent else {
-            togglePopover()
-            return
-        }
-
-        if event.type == .rightMouseUp {
-            showStatusMenu()
-        } else {
-            togglePopover()
-        }
-    }
-
-    private func togglePopover() {
-        if popover.isShown {
-            if isInputModeActive {
-                return
-            }
-            popover.performClose(nil)
-            return
-        }
-
-        showPopoverIfNeeded()
-    }
-
-    private func showPopoverIfNeeded(captureTargetContext: Bool = true) {
-        if popover.isShown {
-            refreshDraftPanel()
-            if isPopoverClosing {
-                shouldReopenPopoverAfterClose = true
-            }
-            return
-        }
-
-        if isPopoverClosing {
-            shouldReopenPopoverAfterClose = true
-            return
-        }
-
-        if captureTargetContext {
-            captureLastTargetContext()
-        }
-
-        refreshDraftPanel()
-        guard let button = statusItem.button else { return }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+        showStatusMenu()
     }
 
     private func showStatusMenu() {
-        popover.performClose(nil)
         refreshIPItem()
         updateAccessibilityStatus()
         statusItem.menu = statusMenu
@@ -423,31 +292,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = nil
     }
 
-    private func openSettingsWindowFromPanel() {
-        popover.performClose(nil)
-        DispatchQueue.main.async { [weak self] in
-            self?.showSettingsWindow(nil)
-        }
-    }
-
-    // MARK: - Draft Management
-
-    private func setMirroredDraft(
-        text: String,
-        sourceAddress: String?,
-        callbackPort: UInt16?,
-        status: String
-    ) {
-        mirroredDraftText = text
-        if let sourceAddress, !sourceAddress.isEmpty {
-            mirroredDraftSourceAddress = sourceAddress
-        }
-        if let callbackPort {
-            mirroredDraftCallbackPort = callbackPort
-        }
-        draftStatusMessage = status
-        refreshDraftPanel()
-    }
+    // MARK: - History
 
     private func appendHistoryEntry(
         text: String,
@@ -471,15 +316,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         historyStore.save(historyEntries)
-        refreshDraftPanel()
-    }
-
-    private func appendCurrentDraftToHistoryIfNeeded(reason: DraftHistoryEntry.Reason) {
-        appendHistoryEntry(
-            text: mirroredDraftText,
-            reason: reason,
-            sourceAddress: mirroredDraftSourceAddress
-        )
+        refreshHistoryWindow()
     }
 
     private func formattedHistoryText() -> String {
@@ -496,235 +333,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var historyTimestampFormatter: DateFormatter {
         Self.sharedHistoryTimestampFormatter
-    }
-
-    private func statusMessageForStartInputReady() -> String {
-        if let sourceAddress = mirroredDraftSourceAddress, !sourceAddress.isEmpty {
-            return "已连接 \(sourceAddress)，等待输入…"
-        }
-        return "等待输入…"
-    }
-
-    private func statusMessageForPasteCleared() -> String {
-        "已粘贴并同步"
-    }
-
-    private func remoteClearLocalFallbackStatus(for context: RemoteDraftClearContext) -> String {
-        switch context {
-        case .startInput:
-            return "已就绪，等待输入…"
-        case .paste:
-            return "已粘贴（未能同步到手机）"
-        }
-    }
-
-    private func pasteMirroredDraft() {
-        guard !mirroredDraftText.isEmpty else { return }
-
-        let textToPaste = mirroredDraftText
-        appendHistoryEntry(
-            text: textToPaste,
-            reason: .pastedDraft,
-            sourceAddress: mirroredDraftSourceAddress
-        )
-        isInputModeActive = false
-        updateIcon()
-        popover.performClose(nil)
-        pendingRemoteDraftClearContext = .paste
-
-        setMirroredDraft(
-            text: "",
-            sourceAddress: mirroredDraftSourceAddress,
-            callbackPort: mirroredDraftCallbackPort,
-            status: "已粘贴，正在同步…"
-        )
-
-        pasteIntoLastTargetApp(textToPaste)
-        requestRemoteDraftClear(context: .paste)
-    }
-
-    private func performDraftPanelPrimaryAction() {
-        if mirroredDraftText.isEmpty {
-            sendFromLastTargetApp()
-        } else {
-            pasteMirroredDraft()
-        }
-    }
-
-    // MARK: - Input Session
-
-    private func toggleInputSession() {
-        if isInputModeActive {
-            cancelInputSession()
-        } else {
-            startInputSession()
-        }
-    }
-
-    private func startInputSession() {
-        appendCurrentDraftToHistoryIfNeeded(reason: .replacedBeforeInput)
-        isInputModeActive = true
-        shouldReopenPopoverAfterClose = isPopoverClosing
-        updateIcon()
-        pendingRemoteDraftClearContext = .startInput
-
-        setMirroredDraft(
-            text: "",
-            sourceAddress: mirroredDraftSourceAddress,
-            callbackPort: mirroredDraftCallbackPort,
-            status: "正在准备输入…"
-        )
-        requestRemoteDraftClear(context: .startInput)
-    }
-
-    private func cancelInputSession() {
-        appendCurrentDraftToHistoryIfNeeded(reason: .stoppedInput)
-        isInputModeActive = false
-        shouldReopenPopoverAfterClose = false
-        pendingRemoteDraftClearContext = .startInput
-        mirroredDraftText = ""
-        draftStatusMessage = "已停止接收"
-        updateIcon()
-        refreshDraftPanel()
-        popover.performClose(nil)
-        requestRemoteDraftClear(context: .startInput)
-    }
-
-    // MARK: - Target App
-
-    private func reactivateLastTargetAppIfNeeded() {
-        guard let targetApp = lastActiveAppBeforePopover,
-              !targetApp.isTerminated else { return }
-        targetApp.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-    }
-
-    private func waitUntilTargetAppIsFrontmost(
-        _ targetApp: NSRunningApplication?,
-        remainingAttempts: Int = 12,
-        completion: @escaping () -> Void
-    ) {
-        guard let targetApp, !targetApp.isTerminated else {
-            completion()
-            return
-        }
-
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApp.processIdentifier {
-            completion()
-            return
-        }
-
-        guard remainingAttempts > 0 else {
-            completion()
-            return
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.waitUntilTargetAppIsFrontmost(
-                targetApp,
-                remainingAttempts: remainingAttempts - 1,
-                completion: completion
-            )
-        }
-    }
-
-    private func captureLastTargetContext() {
-        guard let frontmostApp = NSWorkspace.shared.frontmostApplication,
-              frontmostApp.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
-
-        lastActiveAppBeforePopover = frontmostApp
-    }
-
-    private func pasteIntoLastTargetApp(_ text: String) {
-        let targetApp = lastActiveAppBeforePopover
-        reactivateLastTargetAppIfNeeded()
-
-        waitUntilTargetAppIsFrontmost(targetApp) { [autoSend] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                PasteService.copyAndPaste(
-                    text: text,
-                    autoSend: autoSend,
-                    targetPID: targetApp?.processIdentifier
-                )
-            }
-        }
-    }
-
-    private func sendFromLastTargetApp() {
-        guard checkAccessibilityPermission() else { return }
-
-        let targetApp = lastActiveAppBeforePopover
-        popover.performClose(nil)
-        reactivateLastTargetAppIfNeeded()
-
-        waitUntilTargetAppIsFrontmost(targetApp) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                PasteService.send()
-            }
-        }
-    }
-
-    // MARK: - Remote Sync
-
-    private func requestRemoteDraftClear(context: RemoteDraftClearContext) {
-        guard let host = mirroredDraftSourceAddress,
-              !host.isEmpty,
-              let callbackPort = mirroredDraftCallbackPort else {
-            pendingRemoteDraftClearContext = nil
-            draftStatusMessage = remoteClearLocalFallbackStatus(for: context)
-            refreshDraftPanel()
-            return
-        }
-
-        var components = URLComponents()
-        components.scheme = "http"
-        components.host = host
-        components.port = Int(callbackPort)
-        components.path = "/draft/clear"
-
-        guard let url = components.url else {
-            pendingRemoteDraftClearContext = nil
-            draftStatusMessage = "无法连接手机，请确认两台设备在同一网络"
-            refreshDraftPanel()
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 2
-
-        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
-            DispatchQueue.main.async {
-                guard let self else { return }
-
-                if let error {
-                    guard self.pendingRemoteDraftClearContext == context else { return }
-                    self.pendingRemoteDraftClearContext = nil
-                    self.draftStatusMessage = "同步失败：\(error.localizedDescription)"
-                    self.refreshDraftPanel()
-                    return
-                }
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    guard self.pendingRemoteDraftClearContext == context else { return }
-                    self.pendingRemoteDraftClearContext = nil
-                    self.draftStatusMessage = "同步失败：手机端未响应，请确认 App 在前台运行"
-                    self.refreshDraftPanel()
-                    return
-                }
-
-                guard self.pendingRemoteDraftClearContext == context else { return }
-                self.pendingRemoteDraftClearContext = nil
-
-                if (200...299).contains(httpResponse.statusCode) {
-                    self.draftStatusMessage = context == .startInput
-                        ? self.statusMessageForStartInputReady()
-                        : self.statusMessageForPasteCleared()
-                } else {
-                    self.draftStatusMessage = "同步失败：手机端返回异常，请重试"
-                }
-                self.refreshDraftPanel()
-            }
-        }.resume()
     }
 
     // MARK: - Accessibility
@@ -744,7 +352,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             accessibilityItem.state = .off
             accessibilityItem.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "未授权")
         }
-        refreshDraftPanel()
+        refreshHistoryWindow()
         refreshSettingsWindow()
     }
 
@@ -791,12 +399,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             viewController.onConfigureAutoSendShortcut = { [weak self] in
                 self?.configureShortcut(for: .autoSendToggle)
             }
-            viewController.onConfigureInputShortcut = { [weak self] in
-                self?.configureShortcut(for: .inputToggle)
-            }
-            viewController.onConfigurePasteShortcut = { [weak self] in
-                self?.configureShortcut(for: .pasteDraft)
-            }
             viewController.onOpenAccessibilitySettings = { [weak self] in
                 self?.openAccessibilitySettings(NSMenuItem())
             }
@@ -817,8 +419,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             launchAtLogin: launchAtLogin,
             autoSend: autoSend,
             autoSendShortcut: shortcutSummary(for: .autoSendToggle),
-            inputShortcut: shortcutSummary(for: .inputToggle),
-            pasteShortcut: shortcutSummary(for: .pasteDraft),
             accessibilityGranted: checkAccessibilityPermission()
         )
     }
@@ -1017,14 +617,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         configureShortcut(for: .autoSendToggle)
     }
 
-    @objc private func configureInputShortcut(_ sender: NSMenuItem) {
-        configureShortcut(for: .inputToggle)
-    }
-
-    @objc private func configurePasteShortcut(_ sender: NSMenuItem) {
-        configureShortcut(for: .pasteDraft)
-    }
-
     private func configureShortcut(for action: GlobalShortcutAction) {
         let currentShortcut = currentShortcut(for: action)
         var selectedShortcut: ShortcutConfig? = currentShortcut
@@ -1140,8 +732,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func shortcutMenuItem(for action: GlobalShortcutAction) -> NSMenuItem? {
         switch action {
         case .autoSendToggle: return autoSendShortcutItem
-        case .inputToggle: return inputShortcutItem
-        case .pasteDraft: return pasteShortcutItem
         }
     }
 
@@ -1242,14 +832,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switch action {
         case .autoSendToggle:
             toggleAutoSendState()
-        case .inputToggle:
-            toggleInputSession()
-            if isInputModeActive {
-                showPopoverIfNeeded()
-            }
-        case .pasteDraft:
-            captureLastTargetContext()
-            performDraftPanelPrimaryAction()
         }
     }
 
@@ -1468,44 +1050,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 PasteService.send()
             }
         }
-        srv.onDraftUpdate = { [weak self] update in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                guard self.isInputModeActive else { return }
-
-                if update.text.isEmpty,
-                   !self.mirroredDraftText.isEmpty,
-                   self.pendingRemoteDraftClearContext == nil {
-                    self.appendHistoryEntry(
-                        text: self.mirroredDraftText,
-                        reason: .remoteCleared,
-                        sourceAddress: self.mirroredDraftSourceAddress
-                    )
-                }
-
-                let status: String
-                if update.text.isEmpty {
-                    switch self.pendingRemoteDraftClearContext {
-                    case .startInput:
-                        status = self.statusMessageForStartInputReady()
-                    case .paste:
-                        status = self.statusMessageForPasteCleared()
-                    case nil:
-                        status = "手机端草稿已清空"
-                    }
-                } else {
-                    status = "正在同步…"
-                }
-                self.pendingRemoteDraftClearContext = nil
-
-                self.setMirroredDraft(
-                    text: update.text,
-                    sourceAddress: update.remoteAddress,
-                    callbackPort: update.callbackPort,
-                    status: status
-                )
-            }
-        }
 
         do {
             try srv.start(port: port)
@@ -1521,161 +1065,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func stopServer() {
         guard serverRunning else { return }
-        popover.performClose(nil)
         bonjourAdvertiser.stop()
         server?.stop()
         server = nil
         serverRunning = false
         updateIcon()
-    }
-}
-
-// MARK: - Draft Panel View Controller
-
-private final class DraftPanelViewController: NSViewController {
-    var onPrimaryAction: (() -> Void)?
-    var onStartInput: (() -> Void)?
-    var onOpenSettings: (() -> Void)?
-    var onDismiss: (() -> Void)?
-
-    private let titleLabel = NSTextField(labelWithString: "随心记")
-    private let statusLabel = NSTextField(labelWithString: "")
-    private let textView = NSTextView(frame: .zero)
-    private let scrollView = NSScrollView()
-    private let placeholderLabel = NSTextField(labelWithString: "开始输入...")
-    private let startInputButton = NSButton(title: "开始输入", target: nil, action: nil)
-    private let pasteButton = NSButton(title: "粘贴", target: nil, action: nil)
-    private let settingsButton = NSButton(frame: .zero)
-
-    override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 310))
-
-        titleLabel.font = .preferredFont(forTextStyle: .headline)
-        titleLabel.setAccessibilityLabel("草稿面板")
-
-        statusLabel.font = .systemFont(ofSize: 12)
-        statusLabel.textColor = .secondaryLabelColor
-        statusLabel.lineBreakMode = .byWordWrapping
-        statusLabel.maximumNumberOfLines = 2
-        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        placeholderLabel.font = .systemFont(ofSize: 13)
-        placeholderLabel.textColor = .tertiaryLabelColor
-        placeholderLabel.isHidden = false
-
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.drawsBackground = false
-        textView.textColor = .labelColor
-        textView.font = .systemFont(ofSize: 13)
-        textView.textContainerInset = NSSize(width: 10, height: 10)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
-        textView.setAccessibilityLabel("草稿内容")
-
-        scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.documentView = textView
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
-        scrollView.wantsLayer = true
-        scrollView.layer?.cornerRadius = 8
-        scrollView.layer?.borderWidth = 1
-        scrollView.layer?.borderColor = NSColor.separatorColor.cgColor
-
-        startInputButton.bezelStyle = .rounded
-        startInputButton.target = self
-        startInputButton.action = #selector(handleStartInput)
-        startInputButton.setAccessibilityLabel("切换输入模式")
-
-        pasteButton.bezelStyle = .rounded
-        pasteButton.target = self
-        pasteButton.action = #selector(handlePaste)
-        pasteButton.setAccessibilityLabel("粘贴到当前窗口")
-
-        settingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "设置")
-        settingsButton.bezelStyle = .rounded
-        settingsButton.isBordered = false
-        settingsButton.imagePosition = .imageOnly
-        settingsButton.target = self
-        settingsButton.action = #selector(handleOpenSettings)
-        settingsButton.setAccessibilityLabel("打开设置")
-
-        let buttonRow = NSStackView(views: [startInputButton, pasteButton, NSView(), settingsButton])
-        buttonRow.orientation = .horizontal
-        buttonRow.alignment = .centerY
-        buttonRow.spacing = 8
-
-        let stack = NSStackView(views: [titleLabel, statusLabel, scrollView, buttonRow])
-        stack.orientation = .vertical
-        stack.spacing = 10
-        stack.setCustomSpacing(14, after: scrollView)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        view.addSubview(stack)
-        view.addSubview(placeholderLabel)
-        placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
-            scrollView.heightAnchor.constraint(equalToConstant: 180),
-            placeholderLabel.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 14),
-            placeholderLabel.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 12),
-            placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: scrollView.trailingAnchor, constant: -14)
-        ])
-    }
-
-    override func viewDidLayout() {
-        super.viewDidLayout()
-
-        let size = scrollView.contentSize
-        textView.frame = NSRect(origin: .zero, size: size)
-        textView.minSize = NSSize(width: size.width, height: size.height)
-        textView.maxSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
-    }
-
-    override func cancelOperation(_ sender: Any?) {
-        onDismiss?()
-    }
-
-    func update(
-        text: String,
-        status: String,
-        startInputButtonTitle: String,
-        primaryActionTitle: String,
-        canTriggerPrimaryAction: Bool,
-        canStartInput: Bool
-    ) {
-        if textView.string != text {
-            textView.string = text
-        }
-        statusLabel.stringValue = status
-        startInputButton.title = startInputButtonTitle
-        startInputButton.isEnabled = canStartInput
-        pasteButton.title = primaryActionTitle
-        pasteButton.isEnabled = canTriggerPrimaryAction
-        placeholderLabel.isHidden = !text.isEmpty
-    }
-
-    @objc private func handleStartInput() {
-        onStartInput?()
-    }
-
-    @objc private func handlePaste() {
-        onPrimaryAction?()
-    }
-
-    @objc private func handleOpenSettings() {
-        onOpenSettings?()
     }
 }
 
@@ -1686,7 +1080,7 @@ private final class SettingsWindowController: NSWindowController {
         self.settingsViewController = settingsViewController
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -1694,8 +1088,8 @@ private final class SettingsWindowController: NSWindowController {
         window.title = "设置"
         window.contentViewController = settingsViewController
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 520, height: 620))
-        window.contentMinSize = NSSize(width: 520, height: 560)
+        window.setContentSize(NSSize(width: 520, height: 600))
+        window.contentMinSize = NSSize(width: 520, height: 540)
         window.center()
         super.init(window: window)
     }
@@ -1711,8 +1105,6 @@ private final class SettingsWindowController: NSWindowController {
         launchAtLogin: Bool,
         autoSend: Bool,
         autoSendShortcut: String,
-        inputShortcut: String,
-        pasteShortcut: String,
         accessibilityGranted: Bool
     ) {
         settingsViewController.update(
@@ -1721,8 +1113,6 @@ private final class SettingsWindowController: NSWindowController {
             launchAtLogin: launchAtLogin,
             autoSend: autoSend,
             autoSendShortcut: autoSendShortcut,
-            inputShortcut: inputShortcut,
-            pasteShortcut: pasteShortcut,
             accessibilityGranted: accessibilityGranted
         )
     }
@@ -1736,8 +1126,6 @@ private final class SettingsViewController: NSViewController {
     var onToggleAutoSend: ((Bool) -> Void)?
     var onShowHistory: (() -> Void)?
     var onConfigureAutoSendShortcut: (() -> Void)?
-    var onConfigureInputShortcut: (() -> Void)?
-    var onConfigurePasteShortcut: (() -> Void)?
     var onOpenAccessibilitySettings: (() -> Void)?
 
     private let ipValueLabel = SettingsViewController.makeDetailLabel()
@@ -1745,13 +1133,11 @@ private final class SettingsViewController: NSViewController {
     private let launchAtLoginSwitch = NSSwitch(frame: .zero)
     private let autoSendSwitch = NSSwitch(frame: .zero)
     private let autoSendShortcutValueLabel = SettingsViewController.makeDetailLabel()
-    private let inputShortcutValueLabel = SettingsViewController.makeDetailLabel()
-    private let pasteShortcutValueLabel = SettingsViewController.makeDetailLabel()
     private let accessibilityValueLabel = SettingsViewController.makeDetailLabel()
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 620))
-        preferredContentSize = NSSize(width: 520, height: 620)
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 600))
+        preferredContentSize = NSSize(width: 520, height: 600)
 
         let aboutButton = Self.makeActionButton(title: "关于")
         aboutButton.target = self
@@ -1808,18 +1194,8 @@ private final class SettingsViewController: NSViewController {
         autoSendShortcutButton.target = self
         autoSendShortcutButton.action = #selector(handleConfigureAutoSendShortcut)
 
-        let inputShortcutButton = Self.makeActionButton(title: "设置…")
-        inputShortcutButton.target = self
-        inputShortcutButton.action = #selector(handleConfigureInputShortcut)
-
-        let pasteShortcutButton = Self.makeActionButton(title: "设置…")
-        pasteShortcutButton.target = self
-        pasteShortcutButton.action = #selector(handleConfigurePasteShortcut)
-
         let shortcutsCard = Self.makeCard(rows: [
-            makeRow(title: "自动发送", detail: autoSendShortcutValueLabel, accessory: autoSendShortcutButton),
-            makeRow(title: "输入切换", detail: inputShortcutValueLabel, accessory: inputShortcutButton),
-            makeRow(title: "粘贴/发送", detail: pasteShortcutValueLabel, accessory: pasteShortcutButton)
+            makeRow(title: "自动发送", detail: autoSendShortcutValueLabel, accessory: autoSendShortcutButton)
         ])
 
         let accessibilityButton = Self.makeActionButton(title: "打开系统设置")
@@ -1884,8 +1260,6 @@ private final class SettingsViewController: NSViewController {
         launchAtLogin: Bool,
         autoSend: Bool,
         autoSendShortcut: String,
-        inputShortcut: String,
-        pasteShortcut: String,
         accessibilityGranted: Bool
     ) {
         ipValueLabel.stringValue = ipSummary.isEmpty ? "未检测到局域网地址" : ipSummary
@@ -1893,8 +1267,6 @@ private final class SettingsViewController: NSViewController {
         launchAtLoginSwitch.state = launchAtLogin ? .on : .off
         autoSendSwitch.state = autoSend ? .on : .off
         autoSendShortcutValueLabel.stringValue = autoSendShortcut
-        inputShortcutValueLabel.stringValue = inputShortcut
-        pasteShortcutValueLabel.stringValue = pasteShortcut
 
         accessibilityValueLabel.stringValue = accessibilityGranted ? "已授权" : "未授权"
         accessibilityValueLabel.textColor = accessibilityGranted ? .systemGreen : .systemOrange
@@ -1907,8 +1279,6 @@ private final class SettingsViewController: NSViewController {
     @objc private func handleAutoSendChanged() { onToggleAutoSend?(autoSendSwitch.state == .on) }
     @objc private func handleShowHistory() { onShowHistory?() }
     @objc private func handleConfigureAutoSendShortcut() { onConfigureAutoSendShortcut?() }
-    @objc private func handleConfigureInputShortcut() { onConfigureInputShortcut?() }
-    @objc private func handleConfigurePasteShortcut() { onConfigurePasteShortcut?() }
     @objc private func handleOpenAccessibilitySettings() { onOpenAccessibilitySettings?() }
 
     // MARK: - Row & Card Builders
@@ -2168,27 +1538,5 @@ extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshIPItem()
         updateAccessibilityStatus()
-    }
-}
-
-// MARK: - NSPopoverDelegate
-
-extension AppDelegate: NSPopoverDelegate {
-    func popoverWillClose(_ notification: Notification) {
-        isPopoverClosing = true
-    }
-
-    func popoverDidClose(_ notification: Notification) {
-        isPopoverClosing = false
-
-        guard shouldReopenPopoverAfterClose, isInputModeActive else {
-            shouldReopenPopoverAfterClose = false
-            return
-        }
-
-        shouldReopenPopoverAfterClose = false
-        DispatchQueue.main.async { [weak self] in
-            self?.showPopoverIfNeeded(captureTargetContext: false)
-        }
     }
 }

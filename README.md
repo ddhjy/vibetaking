@@ -1,6 +1,6 @@
 # vibetaking · 随心记
 
-“打开即写”的纯文本速记工具。iOS 端启动直接进入空白编辑页，自动聚焦、唤起键盘，草稿实时落盘，记录以 Markdown 文件存储并通过 iCloud Drive 同步；macOS 端是一个菜单栏伴侣应用，把手机上正在写的内容实时粘贴到 Mac 当前输入框。
+“打开即写”的纯文本速记工具。iOS 端启动直接进入空白编辑页，自动聚焦、唤起键盘，草稿实时落盘，记录以 Markdown 文件存储并通过 iCloud Drive 同步；macOS 端是一个菜单栏伴侣应用，通过 HTTP 接收文本并粘贴到当前输入框。
 
 ![应用演示](docs/demo.png)
 
@@ -31,23 +31,7 @@ docs/        隐私政策、支持说明、演示图（App Store 登记的公开
 | iOS | 打开即写主页、Workflow、标签、历史、iCloud 同步、AI 处理与 Agent | [apps/ios/README.md](apps/ios/README.md) |
 | macOS | 菜单栏常驻，HTTP 接收文本并模拟按键粘贴到当前活跃输入框 | [apps/macos/README.md](apps/macos/README.md) |
 
-两端原本是独立仓库，macOS 端已连同完整提交历史合并进本仓库，不再单独维护。
-
-## 两端配对：Auto Paste
-
-iOS 端的 Auto Paste 是开关型 Workflow，打开后与 Mac 上的菜单栏应用组成一条实时通道：
-
-```mermaid
-sequenceDiagram
-    participant iOS as iOS 端（前台）
-    participant Mac as macOS 菜单栏端
-    iOS->>Mac: POST http://mac:7788/draft  {"text": 当前草稿}
-    Note over Mac: 写入剪贴板并 CGEvent 模拟 Cmd+V
-    Mac-->>iOS: POST http://iphone:7789/draft/clear
-    Note over iOS: 清空草稿，退到后台即停止
-```
-
-发送失败按指数退避重试；iOS 退到后台即停止同步并关闭本机控制服务。macOS 端同时接受任意来源的 `POST /`（纯文本或 `{"text": "..."}`），可配合脚本或 AI 工具直接向 Mac 投递文本。
+两端原本是独立仓库，macOS 端已连同完整提交历史合并进本仓库，不再单独维护。iOS 的手动 Workflow 可以用 HTTP 发送节点把文本投到 Mac；macOS 端也接受任意来源的 `POST /`（纯文本或 `{"text": "..."}`），方便脚本或 AI 工具直接投递。
 
 ## 构建
 

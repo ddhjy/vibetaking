@@ -1,11 +1,9 @@
 import Cocoa
 
 enum StatusBarIcon {
-    static func make(autoSend: Bool, running: Bool, inputActive: Bool = false) -> NSImage {
+    static func make(autoSend: Bool) -> NSImage {
         let symbolName: String
-        if inputActive {
-            symbolName = "text.cursor"
-        } else if autoSend {
+        if autoSend {
             symbolName = "doc.on.clipboard.fill"
         } else {
             symbolName = "doc.on.clipboard"

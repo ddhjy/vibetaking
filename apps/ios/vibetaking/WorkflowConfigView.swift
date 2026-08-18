@@ -68,7 +68,6 @@ struct WorkflowConfigView: View {
     @State private var compactPath: [UUID] = []
     @State private var detailWorkflowId: UUID?
     @State private var presentation: WorkflowConfigPresentation?
-    @State private var syncWarningWorkflowId: UUID?
 
     var body: some View {
         Group {
@@ -237,17 +236,13 @@ struct WorkflowConfigView: View {
                 workflowHeader(for: workflow)
             }
 
-            if workflow.kind == .autoPasteSync {
-                autoPasteSyncEditor(for: workflow)
-            } else {
-                manualWorkflowEditor(for: workflow)
-            }
+            manualWorkflowEditor(for: workflow)
         }
         .listStyle(.insetGrouped)
         .navigationTitle(displayName(for: workflow))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            WorkflowEditToolbarItem(isVisible: workflow.kind == .manual)
+            WorkflowEditToolbarItem()
         }
     }
 
@@ -346,107 +341,6 @@ struct WorkflowConfigView: View {
     }
 
     @ViewBuilder
-    private func autoPasteSyncEditor(for workflow: Workflow) -> some View {
-        let host = workflow.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        let serviceName = (workflow.syncConfig.serviceName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let isBound = !serviceName.isEmpty
-        let needsTarget = host.isEmpty && !isBound
-
-        Section {
-            Toggle("开启同步", isOn: autoPasteActiveBinding(for: workflow.id))
-                .tint(WorkflowConfigStyle.controlTint)
-        } header: {
-            Text("同步配置")
-        } footer: {
-            Text("主页点亮后会实时同步当前草稿，并接收远端清空指令。同一时间只允许一个 Auto Paste 开启同步、一个显示在主页。")
-        }
-
-        DeviceBindingSection(
-            boundServiceName: isBound ? serviceName : nil,
-            onSelect: { device in
-                syncWarningWorkflowId = nil
-                bindDevice(device, to: workflow.id)
-            },
-            onUnbind: {
-                workflowManager.bindAutoPasteSyncDevice(workflowID: workflow.id, serviceName: nil)
-            }
-        )
-
-        if !isBound {
-            Section {
-                TextField("AutoPaste 主机地址", text: autoPasteHostBinding(for: workflow.id))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-
-                TextField("AutoPaste 端口", value: autoPastePortBinding(for: workflow.id), format: .number)
-                    .keyboardType(.numberPad)
-            } header: {
-                Text("手动配置（备用）")
-            } footer: {
-                Text("找不到附近设备时，可手动填写 Mac 菜单栏显示的 IP 与端口。")
-            }
-        }
-
-        Section {
-            HStack(spacing: 10) {
-                Image(systemName: needsTarget ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(needsTarget ? .orange : WorkflowConfigStyle.controlTint)
-                    .frame(width: 24)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(targetPreviewTitle(for: workflow))
-                        .font(.callout.weight(.medium))
-                        .lineLimit(1)
-
-                    Text(targetPreviewSubtitle(for: workflow))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } header: {
-            Text("目标预览")
-        }
-
-        if syncWarningWorkflowId == workflow.id && needsTarget {
-            Section {
-                Label("请先选择附近设备，或手动填写主机地址", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-            }
-        }
-    }
-
-    private func targetPreviewTitle(for workflow: Workflow) -> String {
-        let host = workflow.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let serviceName = workflow.syncConfig.serviceName, !serviceName.isEmpty {
-            return serviceName
-        }
-        return host.isEmpty ? "未配置目标" : "\(host):\(workflow.syncConfig.port)"
-    }
-
-    private func targetPreviewSubtitle(for workflow: Workflow) -> String {
-        let host = workflow.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let serviceName = workflow.syncConfig.serviceName, !serviceName.isEmpty {
-            return host.isEmpty
-                ? "已绑定设备，发送时自动解析地址"
-                : "已绑定设备 · 上次解析 \(host):\(workflow.syncConfig.port)"
-        }
-        return host.isEmpty ? "选择附近设备或填写主机地址后才能开启同步" : "当前同步目标（手动配置）"
-    }
-
-    private func bindDevice(_ device: DiscoveredDevice, to workflowID: UUID) {
-        Task {
-            let resolved = await BonjourResolver.resolve(serviceName: device.serviceName)
-            workflowManager.bindAutoPasteSyncDevice(
-                workflowID: workflowID,
-                serviceName: device.serviceName,
-                host: resolved?.host ?? "",
-                port: resolved?.port
-            )
-        }
-    }
-
-    @ViewBuilder
     private func workflowContextMenu(for workflow: Workflow) -> some View {
         Button {
             workflowManager.toggleWorkflowOpen(workflow.id)
@@ -509,16 +403,6 @@ struct WorkflowConfigView: View {
     private func workflowSummary(for workflow: Workflow) -> String {
         let visibility = workflow.isOpen ? "主页显示" : "未在主页显示"
 
-        if workflow.kind == .autoPasteSync {
-            let state = workflow.isActive ? "同步已开启" : "同步已关闭"
-            let host = workflow.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines)
-            let serviceName = (workflow.syncConfig.serviceName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let target = !serviceName.isEmpty
-                ? serviceName
-                : (host.isEmpty ? "未配置目标" : "\(host):\(workflow.syncConfig.port)")
-            return "\(visibility) · \(state) · \(target)"
-        }
-
         let enabledCount = workflow.nodes.filter { $0.isEnabled }.count
         let totalCount = workflow.nodes.count
         return "\(visibility) · \(enabledCount)/\(totalCount) 节点启用"
@@ -540,47 +424,6 @@ struct WorkflowConfigView: View {
             updateWorkflow(workflowID) { workflow in
                 workflow.name = newValue
             }
-        }
-    }
-
-    private func autoPasteActiveBinding(for workflowID: UUID) -> Binding<Bool> {
-        Binding {
-            workflowManager.workflows.first { $0.id == workflowID }?.isActive ?? false
-        } set: { newValue in
-            let workflow = workflowManager.workflows.first { $0.id == workflowID }
-            let isActive = workflow?.isActive ?? false
-            guard isActive != newValue else { return }
-
-            if newValue {
-                let host = workflow?.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let serviceName = (workflow?.syncConfig.serviceName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !host.isEmpty || !serviceName.isEmpty else {
-                    syncWarningWorkflowId = workflowID
-                    return
-                }
-            }
-
-            syncWarningWorkflowId = nil
-            workflowManager.toggleWorkflowActive(workflowID)
-        }
-    }
-
-    private func autoPasteHostBinding(for workflowID: UUID) -> Binding<String> {
-        Binding {
-            workflowManager.workflows.first { $0.id == workflowID }?.syncConfig.host ?? ""
-        } set: { newValue in
-            if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                syncWarningWorkflowId = nil
-            }
-            workflowManager.updateAutoPasteSyncConfig(workflowID: workflowID, host: newValue)
-        }
-    }
-
-    private func autoPastePortBinding(for workflowID: UUID) -> Binding<Int> {
-        Binding {
-            workflowManager.workflows.first { $0.id == workflowID }?.syncConfig.port ?? 7788
-        } set: { newValue in
-            workflowManager.updateAutoPasteSyncConfig(workflowID: workflowID, port: newValue)
         }
     }
 
@@ -674,10 +517,7 @@ private struct WorkflowSidebarRow: View {
     }
 
     private var iconColor: Color {
-        if workflow.kind == .autoPasteSync && workflow.isActive {
-            return WorkflowConfigStyle.controlTint
-        }
-        return .primary
+        .primary
     }
 }
 

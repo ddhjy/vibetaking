@@ -3,6 +3,7 @@ import SwiftUI
 
 enum WorkflowKind: String, Codable, Equatable {
     case manual
+    /// 旧版 Auto Paste 开关型 Workflow，加载时丢弃，不再创建。
     case autoPasteSync
 }
 
@@ -121,17 +122,6 @@ struct Workflow: Identifiable, Codable, Equatable {
         nodes = try container.decodeIfPresent([WorkflowNode].self, forKey: .nodes) ?? []
     }
 
-    static func autoPasteSync(host: String = "", port: Int = 7788, isActive: Bool = false) -> Workflow {
-        Workflow(
-            name: "Auto Paste",
-            icon: "wave.3.right",
-            kind: .autoPasteSync,
-            isOpen: true,
-            isActive: isActive,
-            syncConfig: SyncConfig(host: host, port: port),
-            nodes: []
-        )
-    }
 }
 
 
@@ -192,10 +182,6 @@ class WorkflowManager {
         }
     }
 
-    var autoPasteSyncWorkflows: [Workflow] {
-        workflows.filter { $0.kind == .autoPasteSync }
-    }
-
     func selectWorkflow(_ id: UUID) {
         selectedWorkflowId = id
         persistSelectedWorkflowId()
@@ -215,12 +201,6 @@ class WorkflowManager {
             return
         }
 
-        if shouldOpen && workflows[idx].kind == .autoPasteSync {
-            for i in workflows.indices where workflows[i].kind == .autoPasteSync {
-                workflows[i].isOpen = false
-            }
-        }
-
         workflows[idx].isOpen = shouldOpen
         saveWorkflows()
     }
@@ -237,14 +217,8 @@ class WorkflowManager {
     }
     
     func deleteWorkflow(_ id: UUID) {
-        guard let workflow = workflows.first(where: { $0.id == id }) else { return }
-
-        switch workflow.kind {
-        case .manual:
-            guard workflows.filter({ $0.kind == .manual }).count > 1 else { return }
-        case .autoPasteSync:
-            guard workflows.filter({ $0.kind == .autoPasteSync }).count > 1 else { return }
-        }
+        guard workflows.contains(where: { $0.id == id }) else { return }
+        guard workflows.count > 1 else { return }
 
         workflows.removeAll { $0.id == id }
         if selectedWorkflowId == id, let firstWorkflowId = workflows.first?.id {
@@ -256,11 +230,7 @@ class WorkflowManager {
     
     func updateWorkflow(_ workflow: Workflow) {
         if let idx = workflows.firstIndex(where: { $0.id == workflow.id }) {
-            var updated = workflow
-            if updated.kind == .autoPasteSync {
-                updated.nodes = []
-            }
-            workflows[idx] = updated
+            workflows[idx] = workflow
             ensureOpenWorkflowExists()
             saveWorkflows()
         }
@@ -269,27 +239,13 @@ class WorkflowManager {
     func duplicateWorkflow(_ id: UUID) {
         guard let source = workflows.first(where: { $0.id == id }) else { return }
 
-        let copy: Workflow
-        switch source.kind {
-        case .manual:
-            copy = Workflow(
-                name: source.name + " 副本",
-                icon: source.icon,
-                kind: .manual,
-                isOpen: source.isOpen,
-                nodes: source.nodes
-            )
-        case .autoPasteSync:
-            copy = Workflow(
-                name: source.name + " 副本",
-                icon: source.icon,
-                kind: .autoPasteSync,
-                isOpen: false,
-                isActive: false,
-                syncConfig: source.syncConfig,
-                nodes: []
-            )
-        }
+        let copy = Workflow(
+            name: source.name + " 副本",
+            icon: source.icon,
+            kind: .manual,
+            isOpen: source.isOpen,
+            nodes: source.nodes
+        )
 
         workflows.append(copy)
         saveWorkflows()
@@ -329,72 +285,8 @@ class WorkflowManager {
     }
 
     func canDeleteWorkflow(_ id: UUID) -> Bool {
-        guard let workflow = workflows.first(where: { $0.id == id }) else { return false }
-        switch workflow.kind {
-        case .manual:
-            return workflows.filter { $0.kind == .manual }.count > 1
-        case .autoPasteSync:
-            return workflows.filter { $0.kind == .autoPasteSync }.count > 1
-        }
-    }
-
-    func toggleWorkflowActive(_ id: UUID) {
-        guard let idx = workflows.firstIndex(where: { $0.id == id }),
-              workflows[idx].kind == .autoPasteSync else { return }
-
-        let shouldActivate = !workflows[idx].isActive
-        if shouldActivate {
-            for i in workflows.indices where workflows[i].kind == .autoPasteSync {
-                workflows[i].isActive = false
-            }
-        }
-        workflows[idx].isActive = shouldActivate
-
-        saveWorkflows()
-        notifyAutoPasteSyncWorkflowChanged()
-    }
-
-    func updateAutoPasteSyncConfig(workflowID: UUID, host: String? = nil, port: Int? = nil) {
-        guard let idx = workflows.firstIndex(where: { $0.id == workflowID }),
-              workflows[idx].kind == .autoPasteSync else { return }
-
-        if let host {
-            workflows[idx].syncConfig.host = host
-            workflows[idx].syncConfig.serviceName = nil
-        }
-        if let port {
-            workflows[idx].syncConfig.port = Self.normalizedPort(port)
-        }
-
-        saveWorkflows()
-        notifyAutoPasteSyncWorkflowChanged()
-    }
-
-    func bindAutoPasteSyncDevice(workflowID: UUID, serviceName: String?, host: String = "", port: Int? = nil) {
-        guard let idx = workflows.firstIndex(where: { $0.id == workflowID }),
-              workflows[idx].kind == .autoPasteSync else { return }
-
-        workflows[idx].syncConfig.serviceName = serviceName
-        if !host.isEmpty {
-            workflows[idx].syncConfig.host = host
-        }
-        if let port {
-            workflows[idx].syncConfig.port = Self.normalizedPort(port)
-        }
-
-        saveWorkflows()
-        notifyAutoPasteSyncWorkflowChanged()
-    }
-
-    func cacheResolvedSyncTarget(workflowID: UUID, host: String, port: Int) {
-        guard let idx = workflows.firstIndex(where: { $0.id == workflowID }),
-              workflows[idx].kind == .autoPasteSync,
-              workflows[idx].syncConfig.serviceName != nil else { return }
-        guard workflows[idx].syncConfig.host != host || workflows[idx].syncConfig.port != port else { return }
-
-        workflows[idx].syncConfig.host = host
-        workflows[idx].syncConfig.port = Self.normalizedPort(port)
-        saveWorkflows()
+        guard workflows.contains(where: { $0.id == id }) else { return false }
+        return workflows.count > 1
     }
 
     func moveWorkflows(inOpenState isOpen: Bool, from source: IndexSet, to destination: Int) {
@@ -426,8 +318,7 @@ class WorkflowManager {
             workflows = [Workflow()]
         }
 
-        migrateLegacyAutoPasteSyncIfNeeded()
-        ensureAutoPasteSyncWorkflowExists()
+        stripRemovedAutoPasteWorkflows()
         
         let persistedSelection = UserDefaults.standard.string(forKey: selectedWorkflowIdKey)
             ?? UserDefaults.standard.string(forKey: legacyActiveWorkflowIdKey)
@@ -443,17 +334,12 @@ class WorkflowManager {
         for i in workflows.indices {
             normalizeNodes(&workflows[i].nodes)
         }
-        normalizeAutoPasteSyncState()
         ensureOpenWorkflowExists()
         saveWorkflows()
     }
     
     func saveWorkflows() {
-        normalizeAutoPasteSyncState()
         for i in workflows.indices {
-            if workflows[i].kind == .autoPasteSync {
-                workflows[i].nodes = []
-            }
             normalizeNodes(&workflows[i].nodes)
         }
         if let data = try? JSONEncoder().encode(workflows) {
@@ -474,14 +360,11 @@ class WorkflowManager {
         }
 
         workflows = configuration.items
+        stripRemovedAutoPasteWorkflows()
         for i in workflows.indices {
-            if workflows[i].kind == .autoPasteSync {
-                workflows[i].nodes = []
-            }
             normalizeNodes(&workflows[i].nodes)
         }
 
-        ensureAutoPasteSyncWorkflowExists()
         if let selectedWorkflowId = configuration.selectedWorkflowId,
            workflows.contains(where: { $0.id == selectedWorkflowId }) {
             self.selectedWorkflowId = selectedWorkflowId
@@ -489,11 +372,9 @@ class WorkflowManager {
             selectedWorkflowId = workflows.first?.id
         }
 
-        normalizeAutoPasteSyncState()
         ensureOpenWorkflowExists()
         saveWorkflows()
         persistSelectedWorkflowId()
-        notifyAutoPasteSyncWorkflowChanged()
     }
     
     private func normalizeNodes(_ nodes: inout [WorkflowNode]) {
@@ -692,68 +573,15 @@ class WorkflowManager {
         }
     }
 
-    private func ensureAutoPasteSyncWorkflowExists() {
-        guard workflows.contains(where: { $0.kind == .autoPasteSync }) else {
-            workflows.append(.autoPasteSync())
-            return
-        }
-    }
-
-    private func normalizeAutoPasteSyncState() {
-        var activeAutoPasteFound = false
-        var openAutoPasteFound = false
-
-        for i in workflows.indices where workflows[i].kind == .autoPasteSync {
-            workflows[i].nodes = []
-
-            if workflows[i].isActive {
-                if activeAutoPasteFound {
-                    workflows[i].isActive = false
-                } else {
-                    activeAutoPasteFound = true
-                }
-            }
-
-            if workflows[i].isOpen {
-                if openAutoPasteFound {
-                    workflows[i].isOpen = false
-                } else {
-                    openAutoPasteFound = true
-                }
-            }
-        }
-    }
-
-    private func migrateLegacyAutoPasteSyncIfNeeded() {
+    private func stripRemovedAutoPasteWorkflows() {
         let defaults = UserDefaults.standard
-        let hasEnabled = defaults.object(forKey: legacyAutoPasteSyncEnabledKey) != nil
-        let hasHost = defaults.object(forKey: legacyAutoPasteHostKey) != nil
-        let hasPort = defaults.object(forKey: legacyAutoPastePortKey) != nil
-        guard hasEnabled || hasHost || hasPort else { return }
-
-        let host = defaults.string(forKey: legacyAutoPasteHostKey) ?? ""
-        let storedPort = defaults.integer(forKey: legacyAutoPastePortKey)
-        let port = storedPort == 0 ? 7788 : Self.normalizedPort(storedPort)
-        let isActive = defaults.bool(forKey: legacyAutoPasteSyncEnabledKey)
-
-        if let idx = workflows.firstIndex(where: { $0.kind == .autoPasteSync }) {
-            if workflows[idx].syncConfig.host.isEmpty {
-                workflows[idx].syncConfig.host = host
-            }
-            workflows[idx].syncConfig.port = port
-            workflows[idx].isActive = isActive
-        } else {
-            workflows.append(.autoPasteSync(host: host, port: port, isActive: isActive))
-        }
-
         defaults.removeObject(forKey: legacyAutoPasteSyncEnabledKey)
         defaults.removeObject(forKey: legacyAutoPasteHostKey)
         defaults.removeObject(forKey: legacyAutoPastePortKey)
-    }
 
-    private func notifyAutoPasteSyncWorkflowChanged() {
-        Task { @MainActor in
-            AutoPasteSyncManager.shared.settingsDidChange()
+        workflows.removeAll { $0.kind == .autoPasteSync }
+        if workflows.isEmpty {
+            workflows = [Workflow()]
         }
     }
 

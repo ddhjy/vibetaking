@@ -361,7 +361,7 @@ struct ContentView: View {
             }
         )
         .accessibilityLabel(focused ? "\(workflow.name)，专注模式" : workflowAccessibilityLabel(for: workflow))
-        .accessibilityHint(workflow.kind == .manual ? (focused ? "长按退出专注模式" : "长按进入专注模式") : "")
+        .accessibilityHint(focused ? "长按退出专注模式" : "长按进入专注模式")
     }
     
     private var fullScreenEditor: some View {
@@ -469,11 +469,6 @@ struct ContentView: View {
             return
         }
 
-        if workflow.kind == .autoPasteSync {
-            toggleAutoPasteWorkflow(workflow)
-            return
-        }
-
         if draftText.isEmpty {
             Task {
                 do {
@@ -551,35 +546,13 @@ struct ContentView: View {
             return Design.primaryColor
         }
 
-        if workflow.kind == .autoPasteSync {
-            return workflow.isActive ? Design.primaryColor : .secondary
-        }
-
         return .primary
     }
 
     private func workflowAccessibilityLabel(for workflow: Workflow) -> String {
-        if workflow.kind == .autoPasteSync {
-            return workflow.isActive ? "\(workflow.name)，已开启" : "\(workflow.name)，已关闭"
-        }
-        return workflow.name
+        workflow.name
     }
 
-    private func toggleAutoPasteWorkflow(_ workflow: Workflow) {
-        let host = workflow.syncConfig.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !workflow.isActive && host.isEmpty {
-            workflowError = NSError(
-                domain: "ContentView",
-                code: -10,
-                userInfo: [NSLocalizedDescriptionKey: "请先在 Workflow 配置里填写 Auto Paste 主机地址"]
-            )
-            showWorkflowError = true
-            return
-        }
-
-        workflowManager.toggleWorkflowActive(workflow.id)
-    }
-    
     private func performSave(text: String) {
         historyManager.updateDraftText(text)
         historyManager.finalizeDraft()
