@@ -21,6 +21,8 @@ struct ContentView: View {
     
     @State private var keyboardTask: Task<Void, Never>?
     @State private var workflowLoadingTask: Task<Void, Never>?
+    @State private var sendPipelineTask: Task<Void, Never>?
+    @State private var sendGeneration: UInt = 0
     
     @State private var hasLaunched = false
     
@@ -350,7 +352,6 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .tint(workflowTintColor(for: workflow))
-        .disabled(processingWorkflowId != nil)
         .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.35).onEnded { _ in
                 if isFocusMode {
@@ -470,16 +471,8 @@ struct ContentView: View {
         }
 
         if draftText.isEmpty {
-            Task {
-                do {
-                    let didSend = try await workflowManager.sendReturnKey(workflowID: workflow.id)
-                    guard didSend else { return }
-                } catch {
-                    await MainActor.run {
-                        workflowError = error
-                        showWorkflowError = true
-                    }
-                }
+            enqueueSend {
+                await sendReturnKey(for: workflow)
             }
             return
         }
@@ -492,10 +485,40 @@ struct ContentView: View {
             return
         }
 
-        executeWorkflow(workflow)
+        let text = draftText
+        let tags = selectedTags
+        historyManager.clearDraft()
+        enqueueSend {
+            await executeWorkflow(workflow, input: text, tags: tags)
+        }
+    }
+
+    /// 串行发送管线：后一次操作等前一次完成；失败后丢弃已排队的后续操作。
+    private func enqueueSend(_ operation: @escaping @MainActor () async -> Bool) {
+        let previous = sendPipelineTask
+        let generation = sendGeneration
+        sendPipelineTask = Task { @MainActor in
+            _ = await previous?.value
+            guard !Task.isCancelled, generation == sendGeneration else { return }
+            let succeeded = await operation()
+            if !succeeded {
+                sendGeneration &+= 1
+            }
+        }
+    }
+
+    private func sendReturnKey(for workflow: Workflow) async -> Bool {
+        do {
+            _ = try await workflowManager.sendReturnKey(workflowID: workflow.id)
+            return true
+        } catch {
+            workflowError = error
+            showWorkflowError = true
+            return false
+        }
     }
     
-    private func executeWorkflow(_ workflow: Workflow) {
+    private func executeWorkflow(_ workflow: Workflow, input: String, tags: [String]) async -> Bool {
         processingWorkflowId = workflow.id
         visibleLoadingWorkflowId = nil
         workflowLoadingTask?.cancel()
@@ -508,36 +531,35 @@ struct ContentView: View {
             }
         }
 
-        Task {
-            do {
-                let result = try await workflowManager.execute(
-                    workflowID: workflow.id,
-                    input: draftText,
-                    tags: selectedTags
-                )
+        defer {
+            workflowLoadingTask?.cancel()
+            workflowLoadingTask = nil
+            visibleLoadingWorkflowId = nil
+            processingWorkflowId = nil
+        }
 
-                await MainActor.run {
-                    workflowLoadingTask?.cancel()
-                    workflowLoadingTask = nil
-                    visibleLoadingWorkflowId = nil
-                    processingWorkflowId = nil
-                    
-                    if result.shouldSave {
-                        performSave(text: result.finalText)
-                    } else {
-                        historyManager.clearDraft()
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    workflowLoadingTask?.cancel()
-                    workflowLoadingTask = nil
-                    visibleLoadingWorkflowId = nil
-                    processingWorkflowId = nil
-                    workflowError = error
-                    showWorkflowError = true
+        do {
+            let result = try await workflowManager.execute(
+                workflowID: workflow.id,
+                input: input,
+                tags: tags
+            )
+
+            if result.shouldSave {
+                if draftText.isEmpty {
+                    performSave(text: result.finalText)
+                } else {
+                    historyManager.addRecord(result.finalText, tags: result.tags)
                 }
             }
+            return true
+        } catch {
+            workflowError = error
+            showWorkflowError = true
+            if draftText.isEmpty {
+                historyManager.restoreLastClearedDraft()
+            }
+            return false
         }
     }
     
