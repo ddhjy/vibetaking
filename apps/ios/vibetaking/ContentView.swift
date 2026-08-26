@@ -384,7 +384,11 @@ struct ContentView: View {
                     isFocused: $isTextEditorFocused,
                     inputSessionResetToken: inputSessionResetToken,
                     isScrollEnabled: !draftText.isEmpty,
-                    font: UIFont.systemFont(ofSize: 17, weight: .regular)
+                    font: UIFont.systemFont(ofSize: 17, weight: .regular),
+                    returnKeyType: isFocusMode ? .send : .default,
+                    onReturnKeySubmit: focusedWorkflow.map { workflow in
+                        { performWorkflowSend(workflow) }
+                    }
                 )
                 .padding(.horizontal, 16)
             }
@@ -470,6 +474,10 @@ struct ContentView: View {
             return
         }
 
+        performWorkflowSend(workflow)
+    }
+
+    private func performWorkflowSend(_ workflow: Workflow) {
         if draftText.isEmpty {
             enqueueSend {
                 await sendReturnKey(for: workflow)
@@ -591,6 +599,8 @@ struct DraftTextView: UIViewRepresentable {
     let inputSessionResetToken: Int
     let isScrollEnabled: Bool
     let font: UIFont
+    var returnKeyType: UIReturnKeyType = .default
+    var onReturnKeySubmit: (() -> Void)?
     
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
@@ -601,6 +611,7 @@ struct DraftTextView: UIViewRepresentable {
         textView.isScrollEnabled = isScrollEnabled
         textView.isEditable = true
         textView.isSelectable = true
+        textView.returnKeyType = returnKeyType
         textView.textContainer.lineFragmentPadding = 0
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
         return textView
@@ -612,6 +623,12 @@ struct DraftTextView: UIViewRepresentable {
         context.coordinator.syncTextIfNeeded(on: uiView)
         uiView.font = font
         uiView.isScrollEnabled = isScrollEnabled
+
+        context.coordinator.applyReturnKeyTypeIfNeeded(on: uiView)
+
+        if context.coordinator.isRefreshingKeyboard {
+            return
+        }
 
         if isFocused && !uiView.isFirstResponder {
             uiView.becomeFirstResponder()
@@ -641,11 +658,67 @@ struct DraftTextView: UIViewRepresentable {
         var lastText: String
         var lastInputSessionResetToken: Int
         var shouldPreferLegacyTextSync = false
+        var appliedReturnKeyType: UIReturnKeyType
+        var isRefreshingKeyboard = false
+        private var keyboardRefreshGeneration: UInt = 0
         
         init(_ parent: DraftTextView) {
             self.parent = parent
             self.lastText = parent.text
             self.lastInputSessionResetToken = parent.inputSessionResetToken
+            self.appliedReturnKeyType = parent.returnKeyType
+        }
+
+        func applyReturnKeyTypeIfNeeded(on textView: UITextView) {
+            guard appliedReturnKeyType != parent.returnKeyType || textView.returnKeyType != parent.returnKeyType else { return }
+            textView.returnKeyType = parent.returnKeyType
+            appliedReturnKeyType = parent.returnKeyType
+            scheduleKeyboardAppearanceRefresh(on: textView)
+        }
+
+        /// 中文九宫格会忽略 `reloadInputViews()`；进出专注又包在 SwiftUI 动画事务里，必须跳出事务并短暂交接 first responder，键盘才会改键帽。
+        private func scheduleKeyboardAppearanceRefresh(on textView: UITextView) {
+            keyboardRefreshGeneration &+= 1
+            let generation = keyboardRefreshGeneration
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self, let textView, self.keyboardRefreshGeneration == generation else { return }
+                self.refreshKeyboardAppearance(on: textView)
+            }
+        }
+
+        private func refreshKeyboardAppearance(on textView: UITextView) {
+            textView.returnKeyType = parent.returnKeyType
+            appliedReturnKeyType = parent.returnKeyType
+
+            let shouldKeepKeyboard = textView.isFirstResponder || parent.isFocused
+            guard shouldKeepKeyboard, textView.window != nil else {
+                textView.reloadInputViews()
+                return
+            }
+
+            isRefreshingKeyboard = true
+            let animationsWereEnabled = UIView.areAnimationsEnabled
+            UIView.setAnimationsEnabled(false)
+            defer {
+                UIView.setAnimationsEnabled(animationsWereEnabled)
+                isRefreshingKeyboard = false
+            }
+
+            let probe = UITextView()
+            probe.returnKeyType = parent.returnKeyType
+            probe.keyboardType = textView.keyboardType
+            probe.autocorrectionType = textView.autocorrectionType
+            probe.spellCheckingType = textView.spellCheckingType
+            probe.textContentType = textView.textContentType
+            probe.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
+            probe.alpha = 0.01
+            probe.isUserInteractionEnabled = false
+            (textView.window ?? textView.superview)?.addSubview(probe)
+
+            probe.becomeFirstResponder()
+            textView.reloadInputViews()
+            textView.becomeFirstResponder()
+            probe.removeFromSuperview()
         }
 
         func resetInputSessionIfNeeded(on textView: UITextView) {
@@ -674,18 +747,28 @@ struct DraftTextView: UIViewRepresentable {
             }
         }
         
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            guard text == "\n", let onSubmit = parent.onReturnKeySubmit else { return true }
+            // 中文输入法组字阶段，回车用于确认候选词，不拦截
+            guard textView.markedTextRange == nil else { return true }
+            onSubmit()
+            return false
+        }
+
         func textViewDidChange(_ textView: UITextView) {
             lastText = textView.text
             parent.text = textView.text
         }
         
         func textViewDidBeginEditing(_ textView: UITextView) {
+            guard !isRefreshingKeyboard else { return }
             if !parent.isFocused {
                 parent.isFocused = true
             }
         }
         
         func textViewDidEndEditing(_ textView: UITextView) {
+            guard !isRefreshingKeyboard else { return }
             if parent.isFocused {
                 parent.isFocused = false
             }
