@@ -20,11 +20,11 @@ class AgentMemoryStore {
     var isEnabled: Bool {
         get {
             access(keyPath: \.isEnabled)
-            return UserDefaults.standard.object(forKey: Self.memoryEnabledKey) as? Bool ?? true
+            return AppDefaults.current.object(forKey: Self.memoryEnabledKey) as? Bool ?? true
         }
         set {
             withMutation(keyPath: \.isEnabled) {
-                UserDefaults.standard.set(newValue, forKey: Self.memoryEnabledKey)
+                AppDefaults.current.set(newValue, forKey: Self.memoryEnabledKey)
             }
         }
     }

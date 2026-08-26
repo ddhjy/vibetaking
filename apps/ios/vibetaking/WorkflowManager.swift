@@ -309,8 +309,12 @@ class WorkflowManager {
     
     func saveNodes() { saveWorkflows() }
     
+    func reload() {
+        loadWorkflows()
+    }
+
     private func loadWorkflows() {
-        if let data = UserDefaults.standard.data(forKey: workflowsStorageKey),
+        if let data = AppDefaults.current.data(forKey: workflowsStorageKey),
            let saved = try? JSONDecoder().decode([Workflow].self, from: data),
            !saved.isEmpty {
             workflows = saved
@@ -320,8 +324,8 @@ class WorkflowManager {
 
         stripRemovedAutoPasteWorkflows()
         
-        let persistedSelection = UserDefaults.standard.string(forKey: selectedWorkflowIdKey)
-            ?? UserDefaults.standard.string(forKey: legacyActiveWorkflowIdKey)
+        let persistedSelection = AppDefaults.current.string(forKey: selectedWorkflowIdKey)
+            ?? AppDefaults.current.string(forKey: legacyActiveWorkflowIdKey)
         
         if let idStr = persistedSelection,
            let id = UUID(uuidString: idStr),
@@ -343,7 +347,7 @@ class WorkflowManager {
             normalizeNodes(&workflows[i].nodes)
         }
         if let data = try? JSONEncoder().encode(workflows) {
-            UserDefaults.standard.set(data, forKey: workflowsStorageKey)
+            AppDefaults.current.set(data, forKey: workflowsStorageKey)
         }
     }
 
@@ -574,7 +578,7 @@ class WorkflowManager {
     }
 
     private func stripRemovedAutoPasteWorkflows() {
-        let defaults = UserDefaults.standard
+        let defaults = AppDefaults.current
         defaults.removeObject(forKey: legacyAutoPasteSyncEnabledKey)
         defaults.removeObject(forKey: legacyAutoPasteHostKey)
         defaults.removeObject(forKey: legacyAutoPastePortKey)
@@ -587,9 +591,9 @@ class WorkflowManager {
 
     private func persistSelectedWorkflowId() {
         if let selectedWorkflowId {
-            UserDefaults.standard.set(selectedWorkflowId.uuidString, forKey: selectedWorkflowIdKey)
+            AppDefaults.current.set(selectedWorkflowId.uuidString, forKey: selectedWorkflowIdKey)
         } else {
-            UserDefaults.standard.removeObject(forKey: selectedWorkflowIdKey)
+            AppDefaults.current.removeObject(forKey: selectedWorkflowIdKey)
         }
     }
 

@@ -29,25 +29,19 @@ class SettingsManager {
 
     var aiBaseURLString: String {
         didSet {
-            let trimmedBaseURL = aiBaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmedBaseURL.isEmpty {
-                UserDefaults.standard.removeObject(forKey: aiBaseURLStringKey)
-            } else {
-                UserDefaults.standard.set(trimmedBaseURL, forKey: aiBaseURLStringKey)
-            }
+            guard !isReloading else { return }
+            persistBaseURLString()
         }
     }
 
     var aiModelID: String {
         didSet {
-            let trimmedModelID = aiModelID.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmedModelID.isEmpty {
-                UserDefaults.standard.removeObject(forKey: aiModelIDKey)
-            } else {
-                UserDefaults.standard.set(trimmedModelID, forKey: aiModelIDKey)
-            }
+            guard !isReloading else { return }
+            persistModelID()
         }
     }
+
+    private var isReloading = false
     
     static func normalizedAIBaseURLString(_ rawValue: String) -> String {
         let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -64,30 +58,77 @@ class SettingsManager {
     }
 
     private init() {
-        let storedBaseURLString = UserDefaults.standard
-            .string(forKey: aiBaseURLStringKey)?
+        let snapshot = Self.loadSnapshot()
+        self.aiBaseURLString = snapshot.baseURLString
+        self.aiModelID = snapshot.modelID
+        persistBaseURLString()
+        persistModelID()
+
+        if let legacyToken = AppDefaults.current.string(forKey: aiApiTokenKey) {
+            KeychainHelper.saveString(legacyToken, forKey: aiApiTokenKey)
+            AppDefaults.current.removeObject(forKey: aiApiTokenKey)
+        }
+        self.aiApiToken = KeychainHelper.loadString(forKey: aiApiTokenKey)
+    }
+
+    func reload() {
+        isReloading = true
+        let snapshot = Self.loadSnapshot()
+        aiBaseURLString = snapshot.baseURLString
+        aiModelID = snapshot.modelID
+        isReloading = false
+        persistBaseURLString()
+        persistModelID()
+
+        if let legacyToken = AppDefaults.current.string(forKey: aiApiTokenKey) {
+            KeychainHelper.saveString(legacyToken, forKey: aiApiTokenKey)
+            AppDefaults.current.removeObject(forKey: aiApiTokenKey)
+        }
+        aiApiToken = KeychainHelper.loadString(forKey: aiApiTokenKey)
+    }
+
+    private func persistBaseURLString() {
+        let trimmedBaseURL = aiBaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedBaseURL.isEmpty {
+            AppDefaults.current.removeObject(forKey: aiBaseURLStringKey)
+        } else {
+            AppDefaults.current.set(trimmedBaseURL, forKey: aiBaseURLStringKey)
+        }
+    }
+
+    private func persistModelID() {
+        let trimmedModelID = aiModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedModelID.isEmpty {
+            AppDefaults.current.removeObject(forKey: aiModelIDKey)
+        } else {
+            AppDefaults.current.set(trimmedModelID, forKey: aiModelIDKey)
+        }
+    }
+
+    private struct Snapshot {
+        let baseURLString: String
+        let modelID: String
+    }
+
+    private static func loadSnapshot() -> Snapshot {
+        let defaults = AppDefaults.current
+        let storedBaseURLString = defaults
+            .string(forKey: "aiBaseURLString")?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedBaseURLString: String
         if let storedBaseURLString,
            !storedBaseURLString.isEmpty,
-           !Self.isLegacyAIBaseURLString(storedBaseURLString) {
+           !isLegacyAIBaseURLString(storedBaseURLString) {
             resolvedBaseURLString = storedBaseURLString
         } else {
-            resolvedBaseURLString = Self.defaultAIBaseURLString
+            resolvedBaseURLString = defaultAIBaseURLString
         }
-        self.aiBaseURLString = resolvedBaseURLString
-        UserDefaults.standard.set(resolvedBaseURLString, forKey: aiBaseURLStringKey)
 
-        let storedModelID = UserDefaults.standard
-            .string(forKey: aiModelIDKey)?
+        let storedModelID = defaults
+            .string(forKey: "aiModelID")?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        self.aiModelID = storedModelID?.isEmpty == false ? storedModelID! : Self.defaultAIModelID
-
-        if let legacyToken = UserDefaults.standard.string(forKey: aiApiTokenKey) {
-            KeychainHelper.saveString(legacyToken, forKey: aiApiTokenKey)
-            UserDefaults.standard.removeObject(forKey: aiApiTokenKey)
-        }
-        self.aiApiToken = KeychainHelper.loadString(forKey: aiApiTokenKey)
+        let resolvedModelID = storedModelID?.isEmpty == false ? storedModelID! : defaultAIModelID
+        return Snapshot(baseURLString: resolvedBaseURLString, modelID: resolvedModelID)
     }
 
     func exportConfiguration() -> AppAIConfiguration {
@@ -119,6 +160,9 @@ class SettingsManager {
 
 struct SettingsView: View {
     @State private var settingsManager = SettingsManager.shared
+    @State private var demoMode = DemoModeManager.shared
+    @State private var versionTapCount = 0
+    @State private var showDemoModeSection = false
     @State private var memoryStore = AgentMemoryStore.shared
     @State private var skillStore = SkillStore.shared
     @State private var models: [AIModel] = []
@@ -284,6 +328,32 @@ struct SettingsView: View {
                 } footer: {
                     Text("导出含密钥，请妥善保管；导入会替换当前全部配置。")
                 }
+
+                if shouldShowDemoModeSection {
+                    Section {
+                        Toggle("演示模式", isOn: Binding(
+                            get: { demoMode.isEnabled },
+                            set: { setDemoModeEnabled($0) }
+                        ))
+                    } header: {
+                        Text("演示模式")
+                    } footer: {
+                        Text("使用独立示例数据与配置，不影响真实记录，用于功能演示与截图。")
+                    }
+                }
+
+                Section {
+                    HStack {
+                        Text("版本")
+                        Spacer()
+                        Text(appVersionLabel)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        handleVersionTap()
+                    }
+                }
             }
             .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.inline)
@@ -320,6 +390,31 @@ struct SettingsView: View {
                 models = []
                 modelLoadError = nil
             }
+        }
+    }
+
+    private var shouldShowDemoModeSection: Bool {
+        demoMode.isEnabled || showDemoModeSection
+    }
+
+    private var appVersionLabel: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+        return build.isEmpty ? version : "\(version) (\(build))"
+    }
+
+    private func handleVersionTap() {
+        versionTapCount += 1
+        if versionTapCount >= 5 {
+            showDemoModeSection = true
+        }
+    }
+
+    private func setDemoModeEnabled(_ enabled: Bool) {
+        demoMode.setEnabled(enabled)
+        if !enabled {
+            showDemoModeSection = false
+            versionTapCount = 0
         }
     }
 

@@ -29,7 +29,7 @@ struct ContentView: View {
     @State private var showWorkflowError = false
     @State private var inputSessionResetToken = 0
 
-    @AppStorage("focusedWorkflowID") private var focusedWorkflowIDRaw: String = ""
+    @AppStorage("focusedWorkflowID", store: AppDefaults.current) private var focusedWorkflowIDRaw: String = ""
     /// 长按切换专注模式后，吞掉同一次按压在松手时触发的 Button 点击。
     @State private var suppressNextWorkflowTap = false
     

@@ -61,11 +61,17 @@ class SkillStore {
         reload()
     }
 
+    func resetAndReload() {
+        loaded = false
+        skills = []
+        loadIfNeeded()
+    }
+
     func reload() {
         let fm = FileManager.default
         let dir = skillsDirectory
-        let useCounts = (UserDefaults.standard.dictionary(forKey: Self.useCountsKey) as? [String: Double]) ?? [:]
-        let disabled = Set(UserDefaults.standard.stringArray(forKey: Self.disabledSkillsKey) ?? [])
+        let useCounts = (AppDefaults.current.dictionary(forKey: Self.useCountsKey) as? [String: Double]) ?? [:]
+        let disabled = Set(AppDefaults.current.stringArray(forKey: Self.disabledSkillsKey) ?? [])
 
         guard let entries = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey], options: [.skipsHiddenFiles]) else {
             skills = []
@@ -101,13 +107,13 @@ class SkillStore {
     func setEnabled(_ enabled: Bool, for skillId: String) {
         guard let index = skills.firstIndex(where: { $0.id == skillId }) else { return }
         skills[index].isEnabled = enabled
-        var disabled = Set(UserDefaults.standard.stringArray(forKey: Self.disabledSkillsKey) ?? [])
+        var disabled = Set(AppDefaults.current.stringArray(forKey: Self.disabledSkillsKey) ?? [])
         if enabled {
             disabled.remove(skillId)
         } else {
             disabled.insert(skillId)
         }
-        UserDefaults.standard.set(Array(disabled), forKey: Self.disabledSkillsKey)
+        AppDefaults.current.set(Array(disabled), forKey: Self.disabledSkillsKey)
     }
 
     // MARK: - YAML Frontmatter Parser (ported as-is from OpenMinis)
@@ -260,7 +266,7 @@ class SkillStore {
         for skill in skills where skill.useCount > 0 {
             counts[skill.id] = skill.useCount
         }
-        UserDefaults.standard.set(counts, forKey: Self.useCountsKey)
+        AppDefaults.current.set(counts, forKey: Self.useCountsKey)
     }
 
     /// Extract skill ID from a relative path like _skills/<skillId>/SKILL.md.

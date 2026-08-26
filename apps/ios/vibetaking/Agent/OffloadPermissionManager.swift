@@ -95,7 +95,7 @@ final class OffloadPermissionManager {
     /// Per-session "Ask Once" grants: [sessionId: Set<commandName>]
     private var sessionGrants: [String: Set<String>] = [:]
 
-    private let defaults = UserDefaults.standard
+    private var defaults: UserDefaults { AppDefaults.current }
     private let logger = AppLogger(category: "OffloadPermission")
 
     private init() {}

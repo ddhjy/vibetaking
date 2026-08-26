@@ -134,6 +134,12 @@ class AgentSessionStore {
         reload()
     }
 
+    func resetAndReload() {
+        loaded = false
+        sessions = []
+        loadIfNeeded()
+    }
+
     func reload() {
         let dir = sessionsDirectory
         guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {

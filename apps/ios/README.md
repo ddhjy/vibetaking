@@ -29,6 +29,10 @@ Workflow 显示为主页底部工具栏的按钮，可新建、复制、排序�
 
 在主页输入以「打开调试模式」开头的内容，再点按任意手动流水线按钮，会清空草稿并打开调试页（当前页面为空）。
 
+### 隐藏演示模式
+
+设置页底部连点版本号 5 次，会显示「演示模式」开关。开启后切换到独立的示例记录与配置（本地 `Documents/Demo/`，不写 iCloud），用于功能演示和 App Store 截图；关闭后立即回到真实数据。演示模式开启期间该开关保持可见。
+
 ## 存储
 
 记录文件是普通 Markdown，带 front matter：
@@ -104,7 +108,8 @@ App Store 发布流程见 [docs/app-store-release.md](docs/app-store-release.md)
 | `vibetaking/HistoryManager.swift` | 草稿与历史记录的 Markdown 读写、导入导出；内含 `TagManager` 与手写 ZIP 解析器 |
 | `vibetaking/HistoryView.swift` | 历史列表、搜索、筛选、随机浏览、批量操作、统计 |
 | `vibetaking/TagPickerView.swift` | 标签选择、创建、重命名、AI 推荐展示、批量打标 |
-| `vibetaking/SettingsView.swift` | AI 设置、模型刷新、配置导入导出；内含 `SettingsManager` |
+| `vibetaking/SettingsView.swift` | AI 设置、模型刷新、配置导入导出、隐藏演示模式开关；内含 `SettingsManager` |
+| `vibetaking/DemoMode/` | 演示模式开关、独立配置组路由、示例数据播种 |
 | `vibetaking/AppConfigurationManager.swift` | 配置包 JSON 的编码、解码与应用 |
 | `vibetaking/KeychainHelper.swift` | Keychain 读写封装 |
 | `vibetaking/Design.swift` | 全局颜色定义 |

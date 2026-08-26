@@ -106,8 +106,16 @@ class TagManager {
         loadCachedTags()
     }
     
+    func reload() {
+        tags = []
+        tagCounts = [:]
+        lastSelectedTags = []
+        loadLastSelectedTags()
+        loadCachedTags()
+    }
+
     private func loadCachedTags() {
-        guard let data = UserDefaults.standard.data(forKey: cachedTagsKey),
+        guard let data = AppDefaults.current.data(forKey: cachedTagsKey),
               let saved = try? JSONDecoder().decode([String].self, from: data) else {
             return
         }
@@ -138,7 +146,7 @@ class TagManager {
         tagCounts = snapshot.counts
 
         if let data = try? JSONEncoder().encode(tags) {
-            UserDefaults.standard.set(data, forKey: cachedTagsKey)
+            AppDefaults.current.set(data, forKey: cachedTagsKey)
         }
     }
 
@@ -155,7 +163,7 @@ class TagManager {
     }
     
     private func loadLastSelectedTags() {
-        let savedTime = UserDefaults.standard.double(forKey: lastSelectedTagsTimeKey)
+        let savedTime = AppDefaults.current.double(forKey: lastSelectedTagsTimeKey)
         if savedTime > 0 {
             let elapsed = Date().timeIntervalSince1970 - savedTime
             if elapsed > tagMemoryExpiration {
@@ -164,7 +172,7 @@ class TagManager {
             }
         }
         
-        guard let data = UserDefaults.standard.data(forKey: lastSelectedTagsKey),
+        guard let data = AppDefaults.current.data(forKey: lastSelectedTagsKey),
               let savedTags = try? JSONDecoder().decode([String].self, from: data) else {
             lastSelectedTags = []
             return
@@ -175,8 +183,8 @@ class TagManager {
     func saveLastSelectedTags(_ tags: [String]) {
         lastSelectedTags = tags
         if let data = try? JSONEncoder().encode(tags) {
-            UserDefaults.standard.set(data, forKey: lastSelectedTagsKey)
-            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastSelectedTagsTimeKey)
+            AppDefaults.current.set(data, forKey: lastSelectedTagsKey)
+            AppDefaults.current.set(Date().timeIntervalSince1970, forKey: lastSelectedTagsTimeKey)
         }
     }
 }
@@ -190,6 +198,7 @@ class HistoryManager {
     private(set) var lastClearedText: String = ""
     var isLoading = false
     private(set) var hasLoadedHistory = false
+    private var loadGeneration: UInt = 0
     
     private var _cachedStorageURL: URL?
     
@@ -394,6 +403,12 @@ class HistoryManager {
     }
 
     nonisolated private static func resolveStorageURL(using fileManager: FileManager) -> URL {
+        if DemoModeManager.isEnabledFlag {
+            let demoURL = DemoModeManager.demoStorageURL(fileManager: fileManager)
+            print("Using demo storage: \(demoURL.path)")
+            return demoURL
+        }
+
         if let documentsURL = iCloudDocumentsURL(using: fileManager) {
             return documentsURL
         }
@@ -823,6 +838,16 @@ class HistoryManager {
         }
     }
     
+    func switchDataset() {
+        loadGeneration += 1
+        _cachedStorageURL = nil
+        items = []
+        lastClearedText = ""
+        hasLoadedHistory = false
+        isLoading = false
+        loadItemsIfNeeded(force: true)
+    }
+
     func loadItems() {
         loadItemsIfNeeded(force: true)
     }
@@ -832,6 +857,8 @@ class HistoryManager {
         if hasLoadedHistory && !force { return }
 
         isLoading = true
+        loadGeneration += 1
+        let generation = loadGeneration
 
         let fileManager = self.fileManager
         let cachedStorageURL = self._cachedStorageURL
@@ -845,6 +872,7 @@ class HistoryManager {
             )
 
             await MainActor.run {
+                guard generation == self.loadGeneration else { return }
                 self.mergeLoadedItems(result)
             }
         }
