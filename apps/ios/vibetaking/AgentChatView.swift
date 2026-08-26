@@ -291,8 +291,9 @@ struct AgentChatView: View {
                         showSessionList = true
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    AppToolbarMoreLabel()
                 }
+                .accessibilityLabel("更多")
             }
         }
         .sheet(isPresented: $showSessionList) {
