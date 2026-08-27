@@ -115,7 +115,7 @@ class AgentChatViewModel {
                     self?.handle(event)
                 }
             } catch is CancellationError {
-                blocks.append(AgentDisplayBlock(kind: .errorNotice("已停止")))
+                blocks.append(AgentDisplayBlock(kind: .errorNotice("已取消")))
             } catch {
                 blocks.append(AgentDisplayBlock(kind: .errorNotice(error.localizedDescription)))
             }
@@ -407,7 +407,7 @@ struct AgentChatView: View {
 
     private var inputBar: some View {
         HStack(spacing: 10) {
-            TextField("输入你的问题…", text: Bindable(viewModel).inputText, axis: .vertical)
+            TextField("问点什么…", text: Bindable(viewModel).inputText, axis: .vertical)
                 .lineLimit(1...4)
                 .focused($inputFocused)
                 .padding(.horizontal, 14)
@@ -454,7 +454,7 @@ struct AgentSessionListView: View {
         NavigationStack {
             List {
                 if store.sessions.isEmpty {
-                    Text("还没有对话记录")
+                    Text("还没有会话")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(store.sessions) { session in

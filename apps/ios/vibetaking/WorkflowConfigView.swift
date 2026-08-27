@@ -104,7 +104,7 @@ struct WorkflowConfigView: View {
             if let workflow = detailWorkflow {
                 workflowDetail(for: workflow)
             } else {
-                ContentUnavailableView("未选择 Workflow", systemImage: "arrow.triangle.branch")
+                ContentUnavailableView("选择一个 Workflow", systemImage: "arrow.triangle.branch")
             }
         }
         .navigationSplitViewStyle(.balanced)
@@ -120,7 +120,7 @@ struct WorkflowConfigView: View {
                                 activateWorkflowDetail(workflow.id)
                             }
                     } else {
-                        ContentUnavailableView("Workflow 已不存在", systemImage: "exclamationmark.triangle")
+                        ContentUnavailableView("Workflow 已被删除", systemImage: "exclamationmark.triangle")
                     }
                 }
         }
@@ -318,9 +318,9 @@ struct WorkflowConfigView: View {
                 .onDelete { workflowManager.deleteNodes(at: $0) }
             }
         } header: {
-            Text("节点流水线")
+            Text("处理步骤")
         } footer: {
-            Text("节点从上到下依次执行。长按拖动可排序。")
+            Text("步骤从上到下依次执行，长按可排序。")
         }
 
         Section {
@@ -328,7 +328,7 @@ struct WorkflowConfigView: View {
                 presentation = .addNode
             } label: {
                 Label {
-                    Text("添加节点")
+                    Text("添加步骤")
                         .foregroundStyle(.primary)
                 } icon: {
                     Image(systemName: "plus.circle.fill")
@@ -385,8 +385,8 @@ struct WorkflowConfigView: View {
                 EditNodeSheet(node: node)
             } else {
                 NavigationStack {
-                    ContentUnavailableView("节点已不存在", systemImage: "exclamationmark.triangle")
-                        .navigationTitle("编辑节点")
+                    ContentUnavailableView("步骤已被删除", systemImage: "exclamationmark.triangle")
+                        .navigationTitle("编辑步骤")
                         .navigationBarTitleDisplayMode(.inline)
                 }
                 .presentationDetents([.medium])
@@ -405,7 +405,7 @@ struct WorkflowConfigView: View {
 
         let enabledCount = workflow.nodes.filter { $0.isEnabled }.count
         let totalCount = workflow.nodes.count
-        return "\(visibility) · \(enabledCount)/\(totalCount) 节点启用"
+        return "\(visibility) · \(enabledCount)/\(totalCount) 步骤启用"
     }
 
     private func displayName(for workflow: Workflow) -> String {
@@ -531,9 +531,9 @@ private struct EmptyWorkflowNodesView: View {
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 4) {
-                Text("还没有节点")
+                Text("还没有步骤")
                     .font(.headline)
-                Text("添加节点来定义这个 Workflow 对草稿的处理流程。")
+                Text("添加步骤来定义草稿的处理方式。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -542,7 +542,7 @@ private struct EmptyWorkflowNodesView: View {
             Button {
                 onAdd()
             } label: {
-                Label("添加节点", systemImage: "plus.circle.fill")
+                Label("添加步骤", systemImage: "plus.circle.fill")
             }
             .buttonStyle(.borderedProminent)
             .tint(WorkflowConfigStyle.controlTint)
@@ -611,7 +611,7 @@ struct NodeRowView: View {
 
     private var nodeDetail: String? {
         if !node.isEnabled {
-            return "已停用"
+            return "已关闭"
         }
 
         if node.type == .aiProcess, let prompt = node.config.aiPrompt, !prompt.isEmpty {
@@ -656,7 +656,7 @@ struct AddNodeSheet: View {
             }
             .listStyle(.plain)
             .tint(WorkflowConfigStyle.controlTint)
-            .navigationTitle("添加节点")
+            .navigationTitle("添加步骤")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -686,20 +686,20 @@ struct EditNodeSheet: View {
         NavigationStack {
             Form {
                 if node.type == .aiProcess {
-                    Section("提示词") {
-                        TextField("输入 AI 提示词", text: $aiPrompt, axis: .vertical)
+                    Section("AI 提示词") {
+                        TextField("告诉 AI 怎样处理草稿…", text: $aiPrompt, axis: .vertical)
                             .lineLimit(5...)
                     }
                 }
 
                 if node.type == .agentProcess {
                     Section {
-                        TextField("输入 Agent 任务指令", text: $agentPrompt, axis: .vertical)
+                        TextField("描述 Agent 要完成的任务…", text: $agentPrompt, axis: .vertical)
                             .lineLimit(5...)
                     } header: {
-                        Text("任务指令")
+                        Text("Agent 指令")
                     } footer: {
-                        Text("Agent 可多轮调用工具（搜索/读取/保存笔记、打标签、记忆、日历、提醒事项、剪贴板）完成任务，最终文本传给下一节点。")
+                        Text("Agent 可多轮调用工具完成任务，最终结果传给下一步。")
                     }
                 }
 
@@ -729,13 +729,13 @@ struct EditNodeSheet: View {
                         } header: {
                             Text("HTTP 配置")
                         } footer: {
-                            Text("内容将发送到以下地址（未绑定设备时使用）")
+                            Text("未绑定设备时，内容发送到此地址。")
                         }
                     }
                 }
 
             }
-            .navigationTitle("编辑节点")
+            .navigationTitle("编辑步骤")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

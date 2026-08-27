@@ -139,7 +139,7 @@ struct TagPickerView: View {
                         VStack(spacing: 0) {
                             if displayedTags.isEmpty {
                                 VStack(spacing: 12) {
-                                    Text("没有找到相关标签")
+                                    Text("没有匹配的标签")
                                         .font(.subheadline)
                                         .foregroundStyle(Color(.secondaryLabel))
 
@@ -258,7 +258,7 @@ struct TagPickerView: View {
     
     private var emptyTagsView: some View {
         VStack(spacing: 12) {
-            Text("点击 + 创建你的第一个标签")
+            Text("还没有标签，试试创建一个")
                 .font(.subheadline)
                 .foregroundStyle(Color(.secondaryLabel))
 
@@ -1018,7 +1018,7 @@ struct BatchTagPickerView: View {
             VStack(spacing: 0) {
                 if tagManager.tags.isEmpty {
                     VStack(spacing: 12) {
-                        Text("还没有标签，点击 + 新建一个")
+                        Text("还没有标签，试试创建一个")
                             .font(.subheadline)
                             .foregroundStyle(Color(.secondaryLabel))
 
@@ -1041,7 +1041,7 @@ struct BatchTagPickerView: View {
                         VStack(spacing: 0) {
                             if displayedTags.isEmpty {
                                 VStack(spacing: 12) {
-                                    Text("没有找到相关标签")
+                                    Text("没有匹配的标签")
                                         .font(.subheadline)
                                         .foregroundStyle(Color(.secondaryLabel))
 

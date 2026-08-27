@@ -224,13 +224,13 @@ struct SettingsView: View {
                             models = []
                             modelLoadError = nil
                         } label: {
-                            Label("恢复默认网关", systemImage: "arrow.uturn.backward")
+                            Label("恢复默认地址", systemImage: "arrow.uturn.backward")
                         }
                     }
                 } header: {
                     Text("AI 配置")
                 } footer: {
-                    Text("密钥安全存储在系统钥匙串中。")
+                    Text("密钥已加密存储在本机。")
                 }
 
                 Section {
@@ -253,7 +253,7 @@ struct SettingsView: View {
                     if isLoadingModels {
                         HStack(spacing: 12) {
                             ProgressView()
-                            Text("正在请求模型列表")
+                            Text("正在获取…")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -263,7 +263,7 @@ struct SettingsView: View {
                             await loadModels()
                         }
                     } label: {
-                        Label(models.isEmpty ? "请求模型列表" : "刷新模型列表", systemImage: "arrow.clockwise")
+                        Label(models.isEmpty ? "获取可用模型" : "刷新列表", systemImage: "arrow.clockwise")
                     }
                     .disabled(!hasToken || isLoadingModels)
 
@@ -275,7 +275,7 @@ struct SettingsView: View {
                 } header: {
                     Text("模型")
                 } footer: {
-                    Text("列表自动获取可用的文本生成模型。")
+                    Text("自动拉取当前可用的模型。")
                 }
 
                 Section {
@@ -298,7 +298,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI 助手")
                 } footer: {
-                    Text("记忆与 Skills 通过 iCloud 自动同步。设备权限决定 AI 能否访问日历、提醒事项或剪贴板。")
+                    Text("记忆和 Skills 通过 iCloud 同步。")
                 }
 
                 Section {
@@ -326,7 +326,7 @@ struct SettingsView: View {
                 } header: {
                     Text("配置迁移")
                 } footer: {
-                    Text("导出含密钥，请妥善保管；导入会替换当前全部配置。")
+                    Text("导出文件包含密钥，请妥善保管。导入会覆盖现有配置。")
                 }
 
                 if shouldShowDemoModeSection {
@@ -338,7 +338,7 @@ struct SettingsView: View {
                     } header: {
                         Text("演示模式")
                     } footer: {
-                        Text("使用独立示例数据与配置，不影响真实记录，用于功能演示与截图。")
+                        Text("使用独立的示例数据，不影响你的真实记录。")
                     }
                 }
 
@@ -483,7 +483,7 @@ struct SettingsView: View {
     private func loadModels() async {
         guard hasToken else {
             models = []
-            modelLoadError = "需要先填写 API Key"
+            modelLoadError = "请先填写 API Key"
             return
         }
 
@@ -502,7 +502,7 @@ struct SettingsView: View {
 
             guard !textModels.isEmpty else {
                 models = []
-                modelLoadError = "模型列表为空"
+                modelLoadError = "暂无可用模型"
                 return
             }
 
@@ -528,7 +528,7 @@ struct AgentSkillsSettingsView: View {
         List {
             if store.skills.isEmpty {
                 Section {
-                    Text("还没有 Skill。可在「文件」App 的记录目录下添加 _skills/<名称>/SKILL.md，AI 会自动加载。")
+                    Text("还没有 Skill。在「文件」App 的记录目录下创建 _skills 文件夹即可，AI 会自动识别。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

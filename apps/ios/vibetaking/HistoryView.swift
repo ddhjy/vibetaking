@@ -192,7 +192,7 @@ struct HistoryView: View {
     }
 
     private var searchPrompt: String {
-        isSearchActive ? "空格分隔多个关键词" : "搜索内容或标签"
+        isSearchActive ? "多个关键词用空格分隔" : "搜索内容或标签"
     }
     
     private func rebuildListCacheAsync() {
@@ -396,7 +396,7 @@ struct HistoryView: View {
         .onChange(of: historyManager.items) { _, _ in
             rebuildListCacheAsync()
         }
-        .alert("确定删除 \(selectedItems.count) 条记录？", isPresented: $showClearConfirmation) {
+        .alert("删除这 \(selectedItems.count) 条记录？", isPresented: $showClearConfirmation) {
             Button("取消", role: .cancel) { }
             Button("删除", role: .destructive) {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -404,7 +404,7 @@ struct HistoryView: View {
                 }
             }
         } message: {
-            Text("删除后无法恢复")
+            Text("删除后不可恢复")
         }
         .sheet(item: $tagPickerItem) { item in
             TagPickerView(itemId: item.id)
@@ -505,8 +505,8 @@ struct HistoryView: View {
             )
         } else {
             importAlert = ImportAlert(
-                title: "没有新记录",
-                message: result.skippedCount > 0 ? "已跳过 \(result.skippedCount) 条重复或空记录" : "没有找到可导入的内容"
+                title: "没有新内容",
+                message: result.skippedCount > 0 ? "已跳过 \(result.skippedCount) 条重复或空记录" : "未找到可导入的记录"
             )
         }
     }
@@ -625,7 +625,7 @@ struct HistoryView: View {
     private var loadingStateView: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text("加载中…")
+            Text("正在加载…")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -647,11 +647,11 @@ struct HistoryView: View {
             .scaleEffect(appearAnimation ? 1 : 0.8)
             
             VStack(spacing: 8) {
-                Text("从第一条想法开始")
+                Text("还没有记录")
                     .font(.title3.bold())
                     .foregroundStyle(Color(.label))
                 
-                Text("回到主页，写完点击按钮即可保存")
+                Text("回到主页写下想法，它会自动保存在这里")
                     .font(.subheadline)
                     .foregroundStyle(Color(.secondaryLabel))
             }
@@ -659,7 +659,7 @@ struct HistoryView: View {
             .offset(y: appearAnimation ? 0 : 10)
             
             Button(action: { showImportPicker = true }) {
-                Label("导入记录", systemImage: "square.and.arrow.down")
+                Label("从文件导入", systemImage: "square.and.arrow.down")
                     .font(.callout.weight(.semibold))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -678,7 +678,7 @@ struct HistoryView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(Color(.tertiaryLabel))
             
-            Text("没有符合条件的记录")
+            Text("没有匹配的记录")
                 .font(.callout)
                 .foregroundStyle(Color(.secondaryLabel))
         }
@@ -691,7 +691,7 @@ struct HistoryView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(Color(.tertiaryLabel))
             
-            Text("未找到「\(effectiveSearchText)」，换个词试试")
+            Text("没有找到「\(effectiveSearchText)」的结果")
                 .font(.callout)
                 .foregroundStyle(Color(.secondaryLabel))
         }

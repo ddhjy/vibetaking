@@ -126,10 +126,10 @@ struct ContentView: View {
             )) { request in
                 OffloadPermissionDialog(request: request)
             }
-            .alert("处理失败", isPresented: $showWorkflowError) {
-                Button("好") { workflowError = nil }
+            .alert("处理未完成", isPresented: $showWorkflowError) {
+                Button("知道了") { workflowError = nil }
             } message: {
-                Text(workflowError?.localizedDescription ?? "请检查网络后再试一次")
+                Text(workflowError?.localizedDescription ?? "检查网络后再试一次")
             }
 
         }
@@ -369,7 +369,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topLeading) {
                 if draftText.isEmpty {
-                    Text("开始输入...")
+                    Text("写点什么…")
                         .font(.body)
                         .foregroundStyle(Color(.placeholderText))
                         .padding(.horizontal, 20)
