@@ -275,7 +275,7 @@ struct SettingsView: View {
                 } header: {
                     Text("模型")
                 } footer: {
-                    Text("自动拉取当前可用的模型。")
+                    Text("需要换模型时再刷新列表。")
                 }
 
                 Section {
@@ -379,9 +379,6 @@ struct SettingsView: View {
                     dismissButton: .default(Text("好"))
                 )
             }
-            .task {
-                await loadModelsIfPossible()
-            }
             .onChange(of: settingsManager.aiApiToken ?? "") { _, _ in
                 models = []
                 modelLoadError = nil
@@ -473,11 +470,6 @@ struct SettingsView: View {
 
     private func modelLabel(for model: AIModel) -> String {
         model.title == model.id ? model.id : "\(model.title) (\(model.id))"
-    }
-
-    private func loadModelsIfPossible() async {
-        guard hasToken else { return }
-        await loadModels()
     }
 
     private func loadModels() async {
