@@ -174,43 +174,83 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(titleItem)
         menu.addItem(.separator())
 
-        let aboutItem = NSMenuItem(title: "关于随心记", action: #selector(showAboutPanel(_:)), keyEquivalent: "")
-        aboutItem.target = self
-        menu.addItem(aboutItem)
+        menu.addItem(makeMenuItem(
+            title: "关于随心记",
+            action: #selector(showAboutPanel(_:)),
+            symbolName: "info.circle"
+        ))
 
-        let settingsItem = NSMenuItem(title: "设置…", action: #selector(showSettingsWindow(_:)), keyEquivalent: ",")
-        settingsItem.target = self
-        menu.addItem(settingsItem)
+        menu.addItem(makeMenuItem(
+            title: "设置…",
+            action: #selector(showSettingsWindow(_:)),
+            keyEquivalent: ",",
+            symbolName: "gearshape"
+        ))
         menu.addItem(.separator())
 
-        ipItem = NSMenuItem(title: ipMenuTitle(), action: #selector(copyIPSummary(_:)), keyEquivalent: "")
-        ipItem.target = self
+        ipItem = makeMenuItem(
+            title: ipMenuTitle(),
+            action: #selector(copyIPSummary(_:)),
+            symbolName: "network"
+        )
         menu.addItem(ipItem)
 
-        portItem = NSMenuItem(title: "端口：\(port)", action: #selector(changePort(_:)), keyEquivalent: "")
-        portItem.target = self
+        portItem = makeMenuItem(
+            title: "端口：\(port)",
+            action: #selector(changePort(_:)),
+            symbolName: "number"
+        )
         menu.addItem(portItem)
 
         menu.addItem(.separator())
 
-        historyItem = NSMenuItem(title: "查看历史记录", action: #selector(showHistoryWindow(_:)), keyEquivalent: "")
-        historyItem.target = self
+        historyItem = makeMenuItem(
+            title: "查看历史记录",
+            action: #selector(showHistoryWindow(_:)),
+            symbolName: "clock.arrow.circlepath"
+        )
         menu.addItem(historyItem)
 
         menu.addItem(.separator())
 
-        accessibilityItem = NSMenuItem(title: "辅助功能", action: #selector(openAccessibilitySettings(_:)), keyEquivalent: "")
-        accessibilityItem.target = self
+        accessibilityItem = makeMenuItem(
+            title: "辅助功能",
+            action: #selector(openAccessibilitySettings(_:)),
+            symbolName: "checkmark.circle.fill"
+        )
         menu.addItem(accessibilityItem)
         updateAccessibilityStatus()
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "退出随心记", action: #selector(quitApp(_:)), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
+        menu.addItem(makeMenuItem(
+            title: "退出随心记",
+            action: #selector(quitApp(_:)),
+            keyEquivalent: "q",
+            symbolName: "power"
+        ))
 
         statusMenu = menu
+    }
+
+    private func makeMenuItem(
+        title: String,
+        action: Selector,
+        keyEquivalent: String = "",
+        symbolName: String
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.target = self
+        applyMenuItemImage(item, systemSymbolName: symbolName, accessibilityDescription: title)
+        return item
+    }
+
+    private func applyMenuItemImage(
+        _ item: NSMenuItem,
+        systemSymbolName: String,
+        accessibilityDescription: String
+    ) {
+        item.image = NSImage(systemSymbolName: systemSymbolName, accessibilityDescription: accessibilityDescription)
     }
 
     private func updateIcon() {
@@ -291,12 +331,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let granted = checkAccessibilityPermission()
         if granted {
             accessibilityItem.title = "辅助功能：已授权"
-            accessibilityItem.state = .on
-            accessibilityItem.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "已授权")
+            applyMenuItemImage(
+                accessibilityItem,
+                systemSymbolName: "checkmark.circle.fill",
+                accessibilityDescription: "已授权"
+            )
         } else {
             accessibilityItem.title = "辅助功能：未授权"
-            accessibilityItem.state = .off
-            accessibilityItem.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "未授权")
+            applyMenuItemImage(
+                accessibilityItem,
+                systemSymbolName: "exclamationmark.triangle.fill",
+                accessibilityDescription: "未授权"
+            )
         }
         refreshHistoryWindow()
         refreshSettingsWindow()
