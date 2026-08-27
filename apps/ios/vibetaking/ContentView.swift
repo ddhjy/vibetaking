@@ -369,7 +369,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topLeading) {
                 if draftText.isEmpty {
-                    Text("写点什么…")
+                    Text("开始输入...")
                         .font(.body)
                         .foregroundStyle(Color(.placeholderText))
                         .padding(.horizontal, 20)

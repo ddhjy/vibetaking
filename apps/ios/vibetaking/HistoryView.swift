@@ -625,7 +625,7 @@ struct HistoryView: View {
     private var loadingStateView: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text("正在加载…")
+            Text("加载中…")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
