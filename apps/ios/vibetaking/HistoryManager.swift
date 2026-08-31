@@ -10,8 +10,9 @@ nonisolated struct HistoryItem: Identifiable, Equatable, Sendable {
     var description: String
     var tags: [String]
     var isDraft: Bool
+    var isDownloading: Bool
     
-    init(id: UUID = UUID(), fileName: String = "", text: String = "", createdAt: Date = .now, description: String = "", tags: [String] = [], isDraft: Bool = false) {
+    init(id: UUID = UUID(), fileName: String = "", text: String = "", createdAt: Date = .now, description: String = "", tags: [String] = [], isDraft: Bool = false, isDownloading: Bool = false) {
         self.id = id
         self.fileName = fileName
         self.text = text
@@ -19,6 +20,7 @@ nonisolated struct HistoryItem: Identifiable, Equatable, Sendable {
         self.description = description.isEmpty && !text.isEmpty ? String(text.prefix(50)) : description
         self.tags = tags
         self.isDraft = isDraft
+        self.isDownloading = isDownloading
     }
     
     var preview: String {
@@ -198,21 +200,29 @@ class HistoryManager {
     private(set) var lastClearedText: String = ""
     var isLoading = false
     private(set) var hasLoadedHistory = false
+    private(set) var isUsingLocalFallback = false
+    private(set) var hasPendingICloudDownloads = false
     private var loadGeneration: UInt = 0
     
-    private var _cachedStorageURL: URL?
+    private var _cachedStorage: ICloudNotesStorage.Resolution?
     
     private let fileManager = FileManager.default
-    private let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HHmm-ss"
-        return formatter
-    }()
+    private let dateFormatter: DateFormatter = ICloudNotesStorage.makeNoteDateFormatter()
+    
+    private var metadataQuery: NSMetadataQuery?
+    private var metadataObservers: [NSObjectProtocol] = []
+    private var lastMetadataSignature = ""
+    private var metadataReloadTask: Task<Void, Never>?
+    private var iCloudRetryTask: Task<Void, Never>?
     
     private let maxImportEntrySize = 50 * 1024 * 1024
     
     private init() {
         ensureDraftExists()
+        observeUbiquityIdentityChanges()
+#if DEBUG
+        ICloudNotesStorage.debugAssertParsing()
+#endif
     }
     
     private let draftFileName = "_draft.md"
@@ -385,69 +395,22 @@ class HistoryManager {
     }
     
     private var storageURL: URL {
-        if let cached = _cachedStorageURL {
+        resolvedStorage.url
+    }
+
+    private var resolvedStorage: ICloudNotesStorage.Resolution {
+        if let cached = _cachedStorage {
             return cached
         }
-        
-        let url = resolveStorageURL()
-        _cachedStorageURL = url
-        return url
+
+        let resolved = ICloudNotesStorage.resolve(using: fileManager)
+        _cachedStorage = resolved
+        return resolved
     }
 
     /// 记录存储根目录（iCloud Documents 或本地回落），供 Agent 文件工具
     /// 作为沙箱作用域使用。
     var agentStorageRootURL: URL { storageURL }
-    
-    private func resolveStorageURL() -> URL {
-        Self.resolveStorageURL(using: fileManager)
-    }
-
-    nonisolated private static func resolveStorageURL(using fileManager: FileManager) -> URL {
-        if DemoModeManager.isEnabledFlag {
-            let demoURL = DemoModeManager.demoStorageURL(fileManager: fileManager)
-            print("Using demo storage: \(demoURL.path)")
-            return demoURL
-        }
-
-        if let documentsURL = iCloudDocumentsURL(using: fileManager) {
-            return documentsURL
-        }
-        
-        let localURL = URL.documentsDirectory.appending(path: "Records")
-        
-        if !fileManager.fileExists(atPath: localURL.path) {
-            try? fileManager.createDirectory(at: localURL, withIntermediateDirectories: true)
-        }
-        
-        print("Using local storage: \(localURL.path)")
-        return localURL
-    }
-
-    nonisolated private static func iCloudDocumentsURL(using fileManager: FileManager) -> URL? {
-        let containerIdentifier = "iCloud.cn.1pointech.vibetaking"
-
-        guard fileManager.ubiquityIdentityToken != nil else {
-            print("iCloud unavailable: no signed-in iCloud account or iCloud Drive is disabled")
-            return nil
-        }
-
-        guard let containerURL = fileManager.url(forUbiquityContainerIdentifier: containerIdentifier) else {
-            print("iCloud container unavailable: \(containerIdentifier)")
-            return nil
-        }
-
-        let documentsURL = containerURL.appendingPathComponent("Documents", isDirectory: true)
-
-        do {
-            try fileManager.createDirectory(at: documentsURL, withIntermediateDirectories: true)
-        } catch {
-            print("Failed to create iCloud Documents directory: \(error)")
-            return nil
-        }
-
-        print("Using iCloud storage: \(documentsURL.path)")
-        return documentsURL
-    }
     
     private func generateFileName(for date: Date) -> String {
         return dateFormatter.string(from: date) + ".md"
@@ -536,7 +499,7 @@ class HistoryManager {
     }
 
     nonisolated private struct DiskLoadResult: Sendable {
-        let storageURL: URL
+        let storage: ICloudNotesStorage.Resolution
         let loadedItems: [HistoryItem]
         let draft: HistoryItem?
         let tagSnapshot: TagManager.Snapshot
@@ -544,50 +507,95 @@ class HistoryManager {
 
     nonisolated private static func loadItemsFromDisk(
         fileManager: FileManager,
-        cachedStorageURL: URL?,
+        resolution: ICloudNotesStorage.Resolution,
         draftFileName: String
     ) -> DiskLoadResult {
-        let documentsURL = cachedStorageURL ?? resolveStorageURL(using: fileManager)
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd-HHmm-ss"
+        let documentsURL = resolution.url
+        let dateFormatter = ICloudNotesStorage.makeNoteDateFormatter()
+        var itemsByFileName: [String: HistoryItem] = [:]
 
-        var loadedItems: [HistoryItem] = []
-
-        if let fileURLs = try? fileManager.contentsOfDirectory(
+        let fileURLs = (try? fileManager.contentsOfDirectory(
             at: documentsURL,
-            includingPropertiesForKeys: [.creationDateKey],
-            options: .skipsHiddenFiles
-        ) {
-            for fileURL in fileURLs {
-                guard fileURL.pathExtension == "md" else { continue }
+            includingPropertiesForKeys: [
+                .isRegularFileKey,
+                .isDirectoryKey,
+                .isUbiquitousItemKey,
+                .ubiquitousItemDownloadingStatusKey
+            ]
+        )) ?? []
 
-                let fileName = fileURL.lastPathComponent
-                if fileName == draftFileName { continue }
+        for fileURL in fileURLs {
+            if (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                continue
+            }
 
-                let name = fileName.replacing(".md", with: "")
-                guard let createdAt = dateFormatter.date(from: name) else { continue }
+            switch ICloudNotesStorage.classifyNoteFile(
+                fileName: fileURL.lastPathComponent,
+                draftFileName: draftFileName
+            ) {
+            case .skip, .draft:
+                continue
 
-                guard let content = try? String(contentsOf: fileURL, encoding: .utf8),
-                      let parsed = parseMarkdownFile(content: content) else {
+            case .placeholder(let fileName):
+                guard itemsByFileName[fileName] == nil else { continue }
+                guard let createdAt = dateFormatter.date(from: ICloudNotesStorage.noteStamp(from: fileName)) else {
+                    continue
+                }
+                ICloudNotesStorage.startDownloading(at: fileURL, fileManager: fileManager)
+                itemsByFileName[fileName] = HistoryItem(
+                    fileName: fileName,
+                    createdAt: createdAt,
+                    isDownloading: true
+                )
+
+            case .markdown(let fileName):
+                guard let createdAt = dateFormatter.date(from: ICloudNotesStorage.noteStamp(from: fileName)) else {
                     continue
                 }
 
-                loadedItems.append(
-                    HistoryItem(
+                if ICloudNotesStorage.needsDownload(at: fileURL) {
+                    ICloudNotesStorage.startDownloading(at: fileURL, fileManager: fileManager)
+                    if itemsByFileName[fileName] == nil {
+                        itemsByFileName[fileName] = HistoryItem(
+                            fileName: fileName,
+                            createdAt: createdAt,
+                            isDownloading: true
+                        )
+                    }
+                    continue
+                }
+
+                if let content = ICloudNotesStorage.readUTF8String(at: fileURL),
+                   let parsed = parseMarkdownFile(content: content) {
+                    itemsByFileName[fileName] = HistoryItem(
                         fileName: fileName,
                         text: parsed.body,
                         createdAt: createdAt,
                         description: parsed.description,
                         tags: parsed.tags
                     )
-                )
+                } else if ICloudNotesStorage.isUbiquitousItem(at: fileURL) {
+                    ICloudNotesStorage.startDownloading(at: fileURL, fileManager: fileManager)
+                    if itemsByFileName[fileName] == nil {
+                        itemsByFileName[fileName] = HistoryItem(
+                            fileName: fileName,
+                            createdAt: createdAt,
+                            isDownloading: true
+                        )
+                    }
+                }
             }
         }
 
+        startDownloadingDraftIfNeeded(
+            documentsURL: documentsURL,
+            draftFileName: draftFileName,
+            fileManager: fileManager
+        )
+
         let draftURL = documentsURL.appendingPathComponent(draftFileName)
         var loadedDraft: HistoryItem?
-        if fileManager.fileExists(atPath: draftURL.path),
-           let content = try? String(contentsOf: draftURL, encoding: .utf8),
+        if let content = ICloudNotesStorage.readUTF8String(at: draftURL),
            let parsed = parseMarkdownFile(content: content) {
             loadedDraft = HistoryItem(
                 text: parsed.body,
@@ -596,29 +604,86 @@ class HistoryManager {
             )
         }
 
-        let sortedItems = loadedItems.sorted { $0.createdAt > $1.createdAt }
-        let tagSnapshot = TagManager.snapshot(from: sortedItems)
+        let sortedItems = itemsByFileName.values.sorted { $0.createdAt > $1.createdAt }
+        let tagSnapshot = TagManager.snapshot(from: sortedItems.filter { !$0.isDownloading })
 
         return DiskLoadResult(
-            storageURL: documentsURL,
+            storage: resolution,
             loadedItems: sortedItems,
             draft: loadedDraft,
             tagSnapshot: tagSnapshot
         )
     }
 
+    nonisolated private static func startDownloadingDraftIfNeeded(
+        documentsURL: URL,
+        draftFileName: String,
+        fileManager: FileManager
+    ) {
+        let draftURL = documentsURL.appendingPathComponent(draftFileName)
+        if fileManager.fileExists(atPath: draftURL.path) {
+            if ICloudNotesStorage.needsDownload(at: draftURL) || ICloudNotesStorage.readUTF8String(at: draftURL) == nil {
+                if ICloudNotesStorage.isUbiquitousItem(at: draftURL) || ICloudNotesStorage.needsDownload(at: draftURL) {
+                    ICloudNotesStorage.startDownloading(at: draftURL, fileManager: fileManager)
+                }
+            }
+            return
+        }
+
+        let placeholderURL = documentsURL.appendingPathComponent("." + draftFileName + ".icloud")
+        if fileManager.fileExists(atPath: placeholderURL.path) {
+            ICloudNotesStorage.startDownloading(at: placeholderURL, fileManager: fileManager)
+        }
+    }
+
     private func mergeLoadedItems(_ result: DiskLoadResult) {
-        _cachedStorageURL = result.storageURL
+        if _cachedStorage?.url != result.storage.url {
+            lastMetadataSignature = ""
+        }
+        _cachedStorage = result.storage
+
+        var loadedItems = result.loadedItems
+        let existingNames = Set(loadedItems.map(\.fileName))
+        let extras = downloadingItemsFromMetadataQuery(existing: existingNames)
+        if !extras.isEmpty {
+            loadedItems.append(contentsOf: extras)
+            loadedItems.sort { $0.createdAt > $1.createdAt }
+        }
+
+        let previousIDsByFileName = Dictionary(
+            savedItems.map { ($0.fileName, $0.id) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        loadedItems = loadedItems.map { item in
+            guard let previousID = previousIDsByFileName[item.fileName] else { return item }
+            return HistoryItem(
+                id: previousID,
+                fileName: item.fileName,
+                text: item.text,
+                createdAt: item.createdAt,
+                description: item.description,
+                tags: item.tags,
+                isDraft: item.isDraft,
+                isDownloading: item.isDownloading
+            )
+        }
 
         // Keep any edits made before disk load finishes, otherwise adopt disk draft.
         let liveDraft = currentDraft
         let hasLiveDraftEdits = !liveDraft.text.isEmpty || !liveDraft.tags.isEmpty
         let mergedDraft = hasLiveDraftEdits ? liveDraft : (result.draft ?? liveDraft)
 
-        items = [mergedDraft] + result.loadedItems
+        items = [mergedDraft] + loadedItems
         TagManager.shared.apply(snapshot: result.tagSnapshot)
+        isUsingLocalFallback = result.storage.kind == .local
+            && ICloudNotesStorage.hasUsedICloud
+            && !DemoModeManager.isEnabledFlag
+        hasPendingICloudDownloads = loadedItems.contains(where: \.isDownloading)
         hasLoadedHistory = true
         isLoading = false
+
+        syncMetadataQuery(for: result.storage.kind)
+        scheduleICloudResolutionRetryIfNeeded(kind: result.storage.kind)
     }
     
     private func generateMarkdownContent(text: String, description: String, tags: [String], createdAt: Date) -> String {
@@ -673,26 +738,14 @@ class HistoryManager {
     }
     
     func deleteRecord(_ item: HistoryItem) {
-        let documentsURL = storageURL
-        
-        let fileURL = documentsURL.appendingPathComponent(item.fileName)
-        
-        do {
-            try fileManager.removeItem(at: fileURL)
-            items.removeAll { $0.id == item.id }
-            TagManager.shared.refreshTags(from: items)
-        } catch {
-            print("Failed to delete record: \(error)")
-            items.removeAll { $0.id == item.id }
-        }
+        removeFiles(for: item)
+        items.removeAll { $0.id == item.id }
+        TagManager.shared.refreshTags(from: items)
     }
     
     func deleteRecords(at offsets: IndexSet) {
-        let documentsURL = storageURL
         for index in offsets {
-            let item = items[index]
-            let fileURL = documentsURL.appendingPathComponent(item.fileName)
-            try? fileManager.removeItem(at: fileURL)
+            removeFiles(for: items[index])
         }
         items.remove(atOffsets: offsets)
         TagManager.shared.refreshTags(from: items)
@@ -701,11 +754,8 @@ class HistoryManager {
     func deleteRecords(ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
         
-        let documentsURL = storageURL
-        
         for item in items where ids.contains(item.id) {
-            let fileURL = documentsURL.appendingPathComponent(item.fileName)
-            try? fileManager.removeItem(at: fileURL)
+            removeFiles(for: item)
         }
         
         items.removeAll { ids.contains($0.id) }
@@ -714,18 +764,25 @@ class HistoryManager {
     }
     
     func clearAll() {
-        let documentsURL = storageURL
-        
         for item in items {
-            let fileURL = documentsURL.appendingPathComponent(item.fileName)
-            try? fileManager.removeItem(at: fileURL)
+            removeFiles(for: item)
         }
         items.removeAll()
         TagManager.shared.refreshTags(from: items)
     }
+
+    private func removeFiles(for item: HistoryItem) {
+        guard !item.fileName.isEmpty else { return }
+        ICloudNotesStorage.removeNoteFiles(
+            named: item.fileName,
+            in: storageURL,
+            fileManager: fileManager
+        )
+    }
     
     func addTag(to itemId: UUID, tagName: String) {
         guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
+        guard !items[index].isDownloading else { return }
         
         let trimmedTag = tagName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTag.isEmpty else { return }
@@ -743,6 +800,7 @@ class HistoryManager {
     
     func removeTag(from itemId: UUID, tagName: String) {
         guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
+        guard !items[index].isDownloading else { return }
         
         items[index].tags.removeAll { $0 == tagName }
         if items[index].isDraft {
@@ -755,6 +813,7 @@ class HistoryManager {
     
     func toggleTag(for itemId: UUID, tagName: String) {
         guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
+        guard !items[index].isDownloading else { return }
         
         if items[index].tags.contains(tagName) {
             items[index].tags.removeAll { $0 == tagName }
@@ -780,6 +839,7 @@ class HistoryManager {
         
         for index in items.indices {
             guard itemIds.contains(items[index].id) else { continue }
+            guard !items[index].isDownloading else { continue }
             guard !items[index].tags.contains(trimmedTag) else { continue }
             items[index].tags.append(trimmedTag)
             if items[index].isDraft {
@@ -794,6 +854,7 @@ class HistoryManager {
     func batchRemoveTag(from itemIds: Set<UUID>, tagName: String) {
         for index in items.indices {
             guard itemIds.contains(items[index].id) else { continue }
+            guard !items[index].isDownloading else { continue }
             guard items[index].tags.contains(tagName) else { continue }
             items[index].tags.removeAll { $0 == tagName }
             if items[index].isDraft {
@@ -810,6 +871,7 @@ class HistoryManager {
         guard !trimmedNewName.isEmpty, oldName != trimmedNewName else { return }
         
         for index in items.indices {
+            guard !items[index].isDownloading else { continue }
             if let tagIndex = items[index].tags.firstIndex(of: oldName) {
                 items[index].tags[tagIndex] = trimmedNewName
                 saveItem(items[index])
@@ -820,6 +882,7 @@ class HistoryManager {
     }
     
     private func saveItem(_ item: HistoryItem) {
+        guard !item.isDownloading, !item.fileName.isEmpty else { return }
         let documentsURL = storageURL
         
         let content = generateMarkdownContent(
@@ -839,35 +902,54 @@ class HistoryManager {
     }
     
     func switchDataset() {
+        iCloudRetryTask?.cancel()
+        metadataReloadTask?.cancel()
+        stopMetadataQuery()
         loadGeneration += 1
-        _cachedStorageURL = nil
+        _cachedStorage = nil
         items = []
         lastClearedText = ""
         hasLoadedHistory = false
+        isUsingLocalFallback = false
+        hasPendingICloudDownloads = false
         isLoading = false
-        loadItemsIfNeeded(force: true)
+        lastMetadataSignature = ""
+        loadItemsIfNeeded(force: true, reevaluateStorage: true)
     }
 
     func loadItems() {
         loadItemsIfNeeded(force: true)
     }
 
-    func loadItemsIfNeeded(force: Bool = false) {
-        if isLoading { return }
-        if hasLoadedHistory && !force { return }
+    func refreshFromEnvironment() {
+        guard !DemoModeManager.isEnabledFlag else { return }
+        loadItemsIfNeeded(force: true, reevaluateStorage: true)
+    }
+
+    func loadItemsIfNeeded(force: Bool = false, reevaluateStorage: Bool = false) {
+        if isLoading && !force && !reevaluateStorage { return }
+        if hasLoadedHistory && !force && !hasPendingICloudDownloads && !reevaluateStorage { return }
 
         isLoading = true
         loadGeneration += 1
         let generation = loadGeneration
 
         let fileManager = self.fileManager
-        let cachedStorageURL = self._cachedStorageURL
+        let cachedStorage = reevaluateStorage ? nil : self._cachedStorage
         let draftFileName = self.draftFileName
 
         Task.detached(priority: .userInitiated) {
+            let resolution = cachedStorage ?? ICloudNotesStorage.resolve(using: fileManager)
+            if resolution.kind == .iCloud {
+                ICloudNotesStorage.migrateLocalFallbackNotes(
+                    to: resolution.url,
+                    fileManager: fileManager
+                )
+            }
+
             let result = Self.loadItemsFromDisk(
                 fileManager: fileManager,
-                cachedStorageURL: cachedStorageURL,
+                resolution: resolution,
                 draftFileName: draftFileName
             )
 
@@ -880,6 +962,168 @@ class HistoryManager {
     
     func refresh() {
         loadItemsIfNeeded(force: true)
+    }
+
+    private func observeUbiquityIdentityChanges() {
+        NotificationCenter.default.addObserver(
+            forName: .NSUbiquityIdentityDidChange,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                HistoryManager.shared.refreshFromEnvironment()
+            }
+        }
+    }
+
+    private func scheduleICloudResolutionRetryIfNeeded(kind: ICloudNotesStorage.Kind) {
+        iCloudRetryTask?.cancel()
+        guard kind == .local, !DemoModeManager.isEnabledFlag else { return }
+
+        iCloudRetryTask = Task.detached { [weak self] in
+            var delay: Double = 2
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+
+                let resolved = ICloudNotesStorage.resolve(using: FileManager.default)
+                if resolved.kind == .iCloud {
+                    await self?.refreshFromEnvironment()
+                    return
+                }
+                delay = min(delay * 2, 300)
+            }
+        }
+    }
+
+    private func syncMetadataQuery(for kind: ICloudNotesStorage.Kind) {
+        if kind == .iCloud {
+            startMetadataQueryIfNeeded()
+        } else {
+            stopMetadataQuery()
+        }
+    }
+
+    private func startMetadataQueryIfNeeded() {
+        guard metadataQuery == nil else { return }
+
+        let query = NSMetadataQuery()
+        query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
+        query.predicate = NSPredicate(
+            format: "%K LIKE[c] '*.md' OR %K LIKE[c] '*.icloud'",
+            NSMetadataItemFSNameKey,
+            NSMetadataItemFSNameKey
+        )
+
+        let finishObserver = NotificationCenter.default.addObserver(
+            forName: .NSMetadataQueryDidFinishGathering,
+            object: query,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                HistoryManager.shared.handleMetadataQueryChange()
+            }
+        }
+        let updateObserver = NotificationCenter.default.addObserver(
+            forName: .NSMetadataQueryDidUpdate,
+            object: query,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                HistoryManager.shared.handleMetadataQueryChange()
+            }
+        }
+
+        metadataObservers = [finishObserver, updateObserver]
+        metadataQuery = query
+        query.start()
+    }
+
+    private func stopMetadataQuery() {
+        metadataReloadTask?.cancel()
+        metadataReloadTask = nil
+
+        if let query = metadataQuery {
+            query.stop()
+        }
+        metadataQuery = nil
+
+        for observer in metadataObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        metadataObservers = []
+        lastMetadataSignature = ""
+    }
+
+    private func handleMetadataQueryChange() {
+        guard let query = metadataQuery else { return }
+
+        query.disableUpdates()
+        defer { query.enableUpdates() }
+
+        var parts: [String] = []
+        for object in query.results {
+            guard let item = object as? NSMetadataItem else { continue }
+            let name = item.value(forAttribute: NSMetadataItemFSNameKey) as? String ?? ""
+            let status = item.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String ?? ""
+            parts.append("\(name):\(status)")
+
+            if status != NSMetadataUbiquitousItemDownloadingStatusCurrent,
+               let url = item.value(forAttribute: NSMetadataItemURLKey) as? URL {
+                ICloudNotesStorage.startDownloading(at: url, fileManager: fileManager)
+            }
+        }
+
+        let signature = parts.sorted().joined(separator: "|")
+        guard signature != lastMetadataSignature else { return }
+        lastMetadataSignature = signature
+
+        metadataReloadTask?.cancel()
+        metadataReloadTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            self.loadItemsIfNeeded(force: true)
+        }
+    }
+
+    private func downloadingItemsFromMetadataQuery(existing: Set<String>) -> [HistoryItem] {
+        guard let query = metadataQuery else { return [] }
+
+        let formatter = ICloudNotesStorage.makeNoteDateFormatter()
+        var extras: [HistoryItem] = []
+        var seen = existing
+
+        for object in query.results {
+            guard let item = object as? NSMetadataItem else { continue }
+            let rawName = item.value(forAttribute: NSMetadataItemFSNameKey) as? String ?? ""
+
+            let fileName: String
+            switch ICloudNotesStorage.classifyNoteFile(fileName: rawName, draftFileName: draftFileName) {
+            case .markdown(let name), .placeholder(let name):
+                fileName = name
+            case .skip, .draft:
+                continue
+            }
+
+            guard seen.insert(fileName).inserted else { continue }
+            guard let createdAt = formatter.date(from: ICloudNotesStorage.noteStamp(from: fileName)) else {
+                continue
+            }
+
+            if let url = item.value(forAttribute: NSMetadataItemURLKey) as? URL {
+                ICloudNotesStorage.startDownloading(at: url, fileManager: fileManager)
+            }
+
+            extras.append(
+                HistoryItem(
+                    fileName: fileName,
+                    createdAt: createdAt,
+                    isDownloading: true
+                )
+            )
+        }
+
+        return extras
     }
     
     func exportAllNotes() throws -> URL {

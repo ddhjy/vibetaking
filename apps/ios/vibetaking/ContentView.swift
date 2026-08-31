@@ -419,7 +419,11 @@ struct ContentView: View {
     }
     
     private func navigateToHistory(searchText: String = "") {
-        historyManager.loadItemsIfNeeded()
+        if historyManager.isUsingLocalFallback || historyManager.hasPendingICloudDownloads {
+            historyManager.refreshFromEnvironment()
+        } else {
+            historyManager.loadItemsIfNeeded()
+        }
         historySearchText = searchText
         isTextEditorFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)

@@ -280,6 +280,11 @@ struct HistoryView: View {
                 historyContent
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if historyManager.isUsingLocalFallback {
+                iCloudUnavailableBanner
+            }
+        }
         .sensoryFeedback(.impact(weight: .medium), trigger: mediumHapticTrigger)
         .overlay(alignment: .top) {
             if showBatchCopiedToast {
@@ -421,7 +426,7 @@ struct HistoryView: View {
             }
         }
         .sheet(isPresented: $showStatistics) {
-            StatisticsView(items: listCache.savedItems)
+            StatisticsView(items: listCache.savedItems.filter { !$0.isDownloading })
         }
         .fileImporter(
             isPresented: $showImportPicker,
@@ -438,7 +443,11 @@ struct HistoryView: View {
             )
         }
         .onAppear {
-            historyManager.loadItemsIfNeeded()
+            if historyManager.isUsingLocalFallback || historyManager.hasPendingICloudDownloads {
+                historyManager.refreshFromEnvironment()
+            } else {
+                historyManager.loadItemsIfNeeded()
+            }
             rebuildListCacheAsync()
             withAnimation(.easeOut(duration: 0.4)) {
                 appearAnimation = true
@@ -632,6 +641,21 @@ struct HistoryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
+    private var iCloudUnavailableBanner: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "icloud.slash")
+                .font(.subheadline.weight(.semibold))
+            Text("iCloud 暂时不可用，正在显示本地数据")
+                .font(.footnote)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.12))
+    }
+
     private var emptyStateView: some View {
         VStack(spacing: 20) {
             ZStack {
@@ -639,7 +663,7 @@ struct HistoryView: View {
                     .fill(.ultraThinMaterial)
                     .frame(width: 100, height: 100)
                 
-                Image(systemName: "rectangle.stack")
+                Image(systemName: historyManager.isUsingLocalFallback ? "icloud.slash" : "rectangle.stack")
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(Color(.secondaryLabel))
             }
@@ -647,13 +671,14 @@ struct HistoryView: View {
             .scaleEffect(appearAnimation ? 1 : 0.8)
             
             VStack(spacing: 8) {
-                Text("还没有记录")
+                Text(historyManager.isUsingLocalFallback ? "云端记录暂时无法加载" : "还没有记录")
                     .font(.title3.bold())
                     .foregroundStyle(Color(.label))
                 
-                Text("回到主页写下想法，它会自动保存在这里")
+                Text(historyManager.isUsingLocalFallback ? "网络或 iCloud 恢复后会自动显示" : "回到主页写下想法，它会自动保存在这里")
                     .font(.subheadline)
                     .foregroundStyle(Color(.secondaryLabel))
+                    .multilineTextAlignment(.center)
             }
             .opacity(appearAnimation ? 1 : 0)
             .offset(y: appearAnimation ? 0 : 10)
@@ -717,7 +742,11 @@ struct HistoryView: View {
                                 searchText: effectiveSearchText,
                                 onCopy: { copyItem(item) },
                                 onToggleSelection: { toggleSelection(item) },
-                                onTagTap: { tagPickerItem = item },
+                                onTagTap: {
+                                    if !item.isDownloading {
+                                        tagPickerItem = item
+                                    }
+                                },
                                 onEdit: {
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                         isEditMode = true
@@ -904,10 +933,21 @@ struct HistoryRowView: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                highlightedText(item.preview, searchText: searchText)
-                    .font(.body)
-                    .foregroundStyle(Color(.label))
+                if item.isDownloading {
+                    HStack(spacing: 8) {
+                        Image(systemName: "icloud.and.arrow.down")
+                            .font(.body)
+                        Text("正在从 iCloud 下载")
+                            .font(.body)
+                    }
+                    .foregroundStyle(Color(.secondaryLabel))
                     .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    highlightedText(item.preview, searchText: searchText)
+                        .font(.body)
+                        .foregroundStyle(Color(.label))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                     
                     Divider()
                     
@@ -915,6 +955,11 @@ struct HistoryRowView: View {
                         Text(item.formattedDate)
                             .font(.caption)
                             .foregroundStyle(Color(.secondaryLabel))
+
+                        if item.isDownloading {
+                            ProgressView()
+                                .controlSize(.mini)
+                        }
                         
                         let displayTags = item.tags.filter { !filteredTags.contains($0) }
                         if !displayTags.isEmpty {
@@ -949,7 +994,7 @@ struct HistoryRowView: View {
                 }
                 .frame(height: 16)
                 .contentShape(Rectangle())
-                .allowsHitTesting(!isEditMode)
+                .allowsHitTesting(!isEditMode && !item.isDownloading)
                 .onTapGesture {
                     onTagTap()
                 }
@@ -970,25 +1015,27 @@ struct HistoryRowView: View {
         .accessibilityAddTraits(.isButton)
         .contextMenu {
             if !isEditMode {
-                Button {
-                    onCopy()
-                } label: {
-                    Label("复制", systemImage: "doc.on.doc")
+                if !item.isDownloading {
+                    Button {
+                        onCopy()
+                    } label: {
+                        Label("复制", systemImage: "doc.on.doc")
+                    }
+                    
+                    Button {
+                        onTagTap()
+                    } label: {
+                        Label("标签", systemImage: "tag")
+                    }
+                    
+                    Button {
+                        onEdit()
+                    } label: {
+                        Label("选择", systemImage: "checkmark.circle")
+                    }
+                    
+                    Divider()
                 }
-                
-                Button {
-                    onTagTap()
-                } label: {
-                    Label("标签", systemImage: "tag")
-                }
-                
-                Button {
-                    onEdit()
-                } label: {
-                    Label("选择", systemImage: "checkmark.circle")
-                }
-                
-                Divider()
                 
                 Button(role: .destructive) {
                     onDelete()
