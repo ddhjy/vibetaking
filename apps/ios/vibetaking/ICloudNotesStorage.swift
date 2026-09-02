@@ -6,7 +6,7 @@ nonisolated enum ICloudNotesStorage {
     static let localFallbackDirectoryName = "Records"
     static let hasUsedICloudKey = "hasUsedICloudStorage"
 
-    enum Kind: Sendable, Equatable {
+    enum Kind: String, Sendable, Equatable, Codable {
         case demo
         case iCloud
         case local

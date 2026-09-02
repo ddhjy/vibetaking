@@ -203,6 +203,9 @@ class HistoryManager {
     private(set) var isUsingLocalFallback = false
     private(set) var hasPendingICloudDownloads = false
     private var loadGeneration: UInt = 0
+    private var pendingReloadReevaluatesStorage: Bool?
+    private var noteCache: [String: NoteCacheEntry] = [:]
+    private var snapshotWriteTask: Task<Void, Never>?
     
     private var _cachedStorage: ICloudNotesStorage.Resolution?
     
@@ -503,16 +506,39 @@ class HistoryManager {
         let loadedItems: [HistoryItem]
         let draft: HistoryItem?
         let tagSnapshot: TagManager.Snapshot
+        let cacheEntries: [String: NoteCacheEntry]
+    }
+
+    nonisolated private static func fileStamp(at fileURL: URL) -> (modificationDate: Date?, fileSize: Int?) {
+        let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        return (values?.contentModificationDate, values?.fileSize)
+    }
+
+    nonisolated private static func downloadingItem(
+        fileName: String,
+        createdAt: Date,
+        cached: NoteCacheEntry?
+    ) -> HistoryItem {
+        if let cached {
+            return cached.makeItem(isDownloading: true)
+        }
+        return HistoryItem(
+            fileName: fileName,
+            createdAt: createdAt,
+            isDownloading: true
+        )
     }
 
     nonisolated private static func loadItemsFromDisk(
         fileManager: FileManager,
         resolution: ICloudNotesStorage.Resolution,
-        draftFileName: String
+        draftFileName: String,
+        noteCache: [String: NoteCacheEntry]
     ) -> DiskLoadResult {
         let documentsURL = resolution.url
         let dateFormatter = ICloudNotesStorage.makeNoteDateFormatter()
         var itemsByFileName: [String: HistoryItem] = [:]
+        var cacheEntries: [String: NoteCacheEntry] = [:]
 
         let fileURLs = (try? fileManager.contentsOfDirectory(
             at: documentsURL,
@@ -520,7 +546,9 @@ class HistoryManager {
                 .isRegularFileKey,
                 .isDirectoryKey,
                 .isUbiquitousItemKey,
-                .ubiquitousItemDownloadingStatusKey
+                .ubiquitousItemDownloadingStatusKey,
+                .contentModificationDateKey,
+                .fileSizeKey
             ]
         )) ?? []
 
@@ -542,11 +570,15 @@ class HistoryManager {
                     continue
                 }
                 ICloudNotesStorage.startDownloading(at: fileURL, fileManager: fileManager)
-                itemsByFileName[fileName] = HistoryItem(
+                let cached = noteCache[fileName]
+                itemsByFileName[fileName] = downloadingItem(
                     fileName: fileName,
                     createdAt: createdAt,
-                    isDownloading: true
+                    cached: cached
                 )
+                if let cached {
+                    cacheEntries[fileName] = cached
+                }
 
             case .markdown(let fileName):
                 guard let createdAt = dateFormatter.date(from: ICloudNotesStorage.noteStamp(from: fileName)) else {
@@ -556,12 +588,24 @@ class HistoryManager {
                 if ICloudNotesStorage.needsDownload(at: fileURL) {
                     ICloudNotesStorage.startDownloading(at: fileURL, fileManager: fileManager)
                     if itemsByFileName[fileName] == nil {
-                        itemsByFileName[fileName] = HistoryItem(
+                        let cached = noteCache[fileName]
+                        itemsByFileName[fileName] = downloadingItem(
                             fileName: fileName,
                             createdAt: createdAt,
-                            isDownloading: true
+                            cached: cached
                         )
+                        if let cached {
+                            cacheEntries[fileName] = cached
+                        }
                     }
+                    continue
+                }
+
+                let stamp = fileStamp(at: fileURL)
+                if let cached = noteCache[fileName],
+                   cached.matches(modificationDate: stamp.modificationDate, fileSize: stamp.fileSize) {
+                    itemsByFileName[fileName] = cached.makeItem(isDownloading: false)
+                    cacheEntries[fileName] = cached
                     continue
                 }
 
@@ -574,14 +618,27 @@ class HistoryManager {
                         description: parsed.description,
                         tags: parsed.tags
                     )
+                    cacheEntries[fileName] = NoteCacheEntry(
+                        fileName: fileName,
+                        createdAt: createdAt,
+                        text: parsed.body,
+                        description: parsed.description,
+                        tags: parsed.tags,
+                        modificationDate: stamp.modificationDate,
+                        fileSize: stamp.fileSize
+                    )
                 } else if ICloudNotesStorage.isUbiquitousItem(at: fileURL) {
                     ICloudNotesStorage.startDownloading(at: fileURL, fileManager: fileManager)
                     if itemsByFileName[fileName] == nil {
-                        itemsByFileName[fileName] = HistoryItem(
+                        let cached = noteCache[fileName]
+                        itemsByFileName[fileName] = downloadingItem(
                             fileName: fileName,
                             createdAt: createdAt,
-                            isDownloading: true
+                            cached: cached
                         )
+                        if let cached {
+                            cacheEntries[fileName] = cached
+                        }
                     }
                 }
             }
@@ -611,7 +668,8 @@ class HistoryManager {
             storage: resolution,
             loadedItems: sortedItems,
             draft: loadedDraft,
-            tagSnapshot: tagSnapshot
+            tagSnapshot: tagSnapshot,
+            cacheEntries: cacheEntries
         )
     }
 
@@ -650,6 +708,13 @@ class HistoryManager {
             loadedItems.sort { $0.createdAt > $1.createdAt }
         }
 
+        var cacheEntries = result.cacheEntries
+        for extra in extras {
+            if cacheEntries[extra.fileName] == nil, let cached = noteCache[extra.fileName] {
+                cacheEntries[extra.fileName] = cached
+            }
+        }
+
         let previousIDsByFileName = Dictionary(
             savedItems.map { ($0.fileName, $0.id) },
             uniquingKeysWith: { first, _ in first }
@@ -675,15 +740,74 @@ class HistoryManager {
 
         items = [mergedDraft] + loadedItems
         TagManager.shared.apply(snapshot: result.tagSnapshot)
+        noteCache = cacheEntries
         isUsingLocalFallback = result.storage.kind == .local
             && ICloudNotesStorage.hasUsedICloud
             && !DemoModeManager.isEnabledFlag
         hasPendingICloudDownloads = loadedItems.contains(where: \.isDownloading)
         hasLoadedHistory = true
         isLoading = false
+        scheduleSnapshotWrite()
 
         syncMetadataQuery(for: result.storage.kind)
         scheduleICloudResolutionRetryIfNeeded(kind: result.storage.kind)
+        consumePendingReloadIfNeeded()
+    }
+
+    private func applySnapshot(_ snapshot: HistorySnapshot) {
+        noteCache = Dictionary(uniqueKeysWithValues: snapshot.entries.map { ($0.fileName, $0) })
+        let loadedItems = snapshot.entries
+            .map { $0.makeItem(isDownloading: false) }
+            .sorted { $0.createdAt > $1.createdAt }
+
+        items = [currentDraft] + loadedItems
+        TagManager.shared.apply(snapshot: TagManager.snapshot(from: loadedItems))
+        isUsingLocalFallback = snapshot.storageKind == .local
+            && ICloudNotesStorage.hasUsedICloud
+            && !DemoModeManager.isEnabledFlag
+    }
+
+    private func consumePendingReloadIfNeeded() {
+        guard let reevaluate = pendingReloadReevaluatesStorage else { return }
+        pendingReloadReevaluatesStorage = nil
+        loadItemsIfNeeded(force: true, reevaluateStorage: reevaluate)
+    }
+
+    private func scheduleSnapshotWrite() {
+        snapshotWriteTask?.cancel()
+        snapshotWriteTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await self?.writeSnapshotNow()
+        }
+    }
+
+    private func writeSnapshotNow() {
+        guard let storage = _cachedStorage, storage.kind != .demo else { return }
+        let snapshot = HistorySnapshot(
+            version: HistorySnapshotStore.currentVersion,
+            storageKind: storage.kind,
+            storagePath: storage.url.path,
+            entries: noteCache.values.sorted { $0.createdAt > $1.createdAt }
+        )
+        Task.detached(priority: .utility) {
+            HistorySnapshotStore.save(snapshot)
+        }
+    }
+
+    private func updateNoteCache(for item: HistoryItem, at fileURL: URL) {
+        guard !item.fileName.isEmpty, !item.isDownloading else { return }
+        let stamp = Self.fileStamp(at: fileURL)
+        noteCache[item.fileName] = NoteCacheEntry(
+            fileName: item.fileName,
+            createdAt: item.createdAt,
+            text: item.text,
+            description: item.description,
+            tags: item.tags,
+            modificationDate: stamp.modificationDate,
+            fileSize: stamp.fileSize
+        )
+        scheduleSnapshotWrite()
     }
     
     private func generateMarkdownContent(text: String, description: String, tags: [String], createdAt: Date) -> String {
@@ -730,6 +854,7 @@ class HistoryManager {
                 tags: tags
             )
             items.insert(newItem, at: 0)
+            updateNoteCache(for: newItem, at: fileURL)
             TagManager.shared.refreshTags(from: items)
             
         } catch {
@@ -778,6 +903,9 @@ class HistoryManager {
             in: storageURL,
             fileManager: fileManager
         )
+        if noteCache.removeValue(forKey: item.fileName) != nil {
+            scheduleSnapshotWrite()
+        }
     }
     
     func addTag(to itemId: UUID, tagName: String) {
@@ -896,6 +1024,7 @@ class HistoryManager {
         
         do {
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            updateNoteCache(for: item, at: fileURL)
         } catch {
             print("Failed to update record: \(error)")
         }
@@ -904,6 +1033,7 @@ class HistoryManager {
     func switchDataset() {
         iCloudRetryTask?.cancel()
         metadataReloadTask?.cancel()
+        snapshotWriteTask?.cancel()
         stopMetadataQuery()
         loadGeneration += 1
         _cachedStorage = nil
@@ -914,6 +1044,8 @@ class HistoryManager {
         hasPendingICloudDownloads = false
         isLoading = false
         lastMetadataSignature = ""
+        noteCache = [:]
+        pendingReloadReevaluatesStorage = nil
         loadItemsIfNeeded(force: true, reevaluateStorage: true)
     }
 
@@ -927,7 +1059,12 @@ class HistoryManager {
     }
 
     func loadItemsIfNeeded(force: Bool = false, reevaluateStorage: Bool = false) {
-        if isLoading && !force && !reevaluateStorage { return }
+        if isLoading {
+            if force || reevaluateStorage {
+                pendingReloadReevaluatesStorage = (pendingReloadReevaluatesStorage ?? false) || reevaluateStorage
+            }
+            return
+        }
         if hasLoadedHistory && !force && !hasPendingICloudDownloads && !reevaluateStorage { return }
 
         isLoading = true
@@ -936,9 +1073,20 @@ class HistoryManager {
 
         let fileManager = self.fileManager
         let cachedStorage = reevaluateStorage ? nil : self._cachedStorage
+        let previousStoragePath = _cachedStorage?.url.path
         let draftFileName = self.draftFileName
+        let existingCache = noteCache
+        let shouldRestoreSnapshot = !hasLoadedHistory && noteCache.isEmpty && !DemoModeManager.isEnabledFlag
 
         Task.detached(priority: .userInitiated) {
+            let snapshot = shouldRestoreSnapshot ? HistorySnapshotStore.load() : nil
+            if let snapshot, snapshot.storageKind != .demo, !snapshot.entries.isEmpty {
+                await MainActor.run {
+                    guard generation == self.loadGeneration else { return }
+                    self.applySnapshot(snapshot)
+                }
+            }
+
             let resolution = cachedStorage ?? ICloudNotesStorage.resolve(using: fileManager)
             if resolution.kind == .iCloud {
                 ICloudNotesStorage.migrateLocalFallbackNotes(
@@ -947,10 +1095,20 @@ class HistoryManager {
                 )
             }
 
+            let cacheForScan: [String: NoteCacheEntry]
+            if let snapshot, snapshot.storageKind != .demo, snapshot.storagePath == resolution.url.path {
+                cacheForScan = Dictionary(uniqueKeysWithValues: snapshot.entries.map { ($0.fileName, $0) })
+            } else if previousStoragePath == resolution.url.path {
+                cacheForScan = existingCache
+            } else {
+                cacheForScan = [:]
+            }
+
             let result = Self.loadItemsFromDisk(
                 fileManager: fileManager,
                 resolution: resolution,
-                draftFileName: draftFileName
+                draftFileName: draftFileName,
+                noteCache: cacheForScan
             )
 
             await MainActor.run {
@@ -1115,10 +1273,10 @@ class HistoryManager {
             }
 
             extras.append(
-                HistoryItem(
+                Self.downloadingItem(
                     fileName: fileName,
                     createdAt: createdAt,
-                    isDownloading: true
+                    cached: noteCache[fileName]
                 )
             )
         }
@@ -1228,6 +1386,7 @@ class HistoryManager {
             let fileURL = documentsURL.appendingPathComponent(fileName)
             
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            updateNoteCache(for: item, at: fileURL)
             
             importedItems.append(item)
             existingTexts.insert(parsed.body)

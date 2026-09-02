@@ -933,7 +933,7 @@ struct HistoryRowView: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                if item.isDownloading {
+                if item.isDownloading && item.text.isEmpty {
                     HStack(spacing: 8) {
                         Image(systemName: "icloud.and.arrow.down")
                             .font(.body)
