@@ -63,23 +63,40 @@ struct ContentView: View {
     private var isFocusMode: Bool { focusedWorkflow != nil }
 
     var body: some View {
+        GeometryReader { navigationGeometry in
+            navigationContent(topEdge: navigationGeometry.frame(in: .global).minY)
+        }
+    }
+
+    private func navigationContent(topEdge: CGFloat) -> some View {
         NavigationStack {
             ZStack {
                 Color(.systemBackground)
                     .ignoresSafeArea()
                 
-                VStack(spacing: 0) {
-                    fullScreenEditor
+                fullScreenEditor
+            }
+            .overlay(alignment: .topLeading) {
+                if !isFocusMode {
+                    GeometryReader { contentGeometry in
+                        // Draw the page title in the navigation bar's visual band,
+                        // without making it a navigation item or reserving another row.
+                        let navigationHeight = max(0, contentGeometry.frame(in: .global).minY - topEdge)
+                        Text("随心记")
+                            .font(.title.bold())
+                            .foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, 20)
+                            .padding(.trailing, 80)
+                            // The native toolbar reserves 12 pt below its controls.
+                            .frame(height: max(0, navigationHeight - 12))
+                            .offset(y: -navigationHeight)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                    .allowsHitTesting(false)
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("记录", systemImage: "rectangle.stack") {
-                        navigateToHistory()
-                    }
-                        .labelStyle(.iconOnly)
-                }
-                
                 ToolbarItem(id: AppToolbarIdentity.moreButton, placement: .topBarTrailing) {
                     Menu("更多操作", systemImage: "ellipsis") {
                         Button {
@@ -241,19 +258,21 @@ struct ContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 20)
             }
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 if isFocusMode, let workflow = focusedWorkflow {
                     workflowButton(for: workflow)
                         .frame(maxWidth: .infinity)
                         .controlSurface(emphasized: true)
 
-                    Button("退出专注", systemImage: "viewfinder") {
+                    Button {
                         exitFocusMode()
+                    } label: {
+                        Image(systemName: "viewfinder")
+                            .font(Design.controlFont)
+                            .frame(width: Design.minimumTarget, height: Design.minimumTarget)
                     }
-                    .labelStyle(.iconOnly)
-                    .font(Design.controlFont)
-                    .frame(width: 44, height: 44)
                     .controlSurface()
+                    .accessibilityLabel("退出专注")
                     .accessibilityHint("显示导航和其他工作流")
                 } else {
                     if dynamicTypeSize.isAccessibilitySize {
@@ -274,14 +293,19 @@ struct ContentView: View {
                     } else {
                         workflowToolbar
                     }
-                    tagButton
-
-                    Button("搜索记录", systemImage: "magnifyingglass", action: searchDraftInHistory)
-                        .labelStyle(.iconOnly)
-                        .font(Design.controlFont)
-                        .frame(width: 44, height: 44)
-                        .controlSurface()
+                    HStack(spacing: 4) {
+                        tagButton
+                        Button(action: searchDraftInHistory) {
+                            Image(systemName: "rectangle.stack")
+                                .font(Design.controlFont)
+                                .frame(width: Design.minimumTarget, height: Design.minimumTarget)
+                        }
+                        .accessibilityLabel("记录与搜索")
+                        .accessibilityHint(trimmedDraftText.isEmpty ? "打开记录列表" : "使用当前草稿内容搜索记录")
                         .disabled(processingWorkflowId != nil)
+                    }
+                    .padding(.horizontal, 4)
+                    .controlSurface()
                 }
 
                 clearDraftButton
@@ -349,7 +373,7 @@ struct ContentView: View {
 
     private var tagButton: some View {
         Button { showTagSelector = true } label: {
-            Image(systemName: selectedTags.isEmpty ? "tag" : "tag.fill")
+            Image(systemName: "tag")
                 .font(Design.controlFont)
                 .frame(width: 44, height: 44)
                 .overlay(alignment: .topTrailing) {
@@ -362,7 +386,6 @@ struct ContentView: View {
                     }
                 }
         }
-        .controlSurface()
         .accessibilityLabel("草稿标签")
         .accessibilityValue(selectedTags.isEmpty ? "未选择" : selectedTags.joined(separator: "、"))
         .accessibilityFocused($accessibilityFocus, equals: .tags)
@@ -453,6 +476,7 @@ struct ContentView: View {
             }
             .frame(maxWidth: Design.readingWidth, maxHeight: .infinity)
             .frame(maxWidth: .infinity)
+            .padding(.top, isFocusMode ? 0 : 12)
 
             if draftText.isEmpty && historyManager.savedItems.isEmpty && !isFocusMode {
                 VStack(alignment: .leading, spacing: 4) {
