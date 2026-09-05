@@ -186,9 +186,9 @@ struct TagPickerView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .modifier(TagSelectionBackground(searchText: $searchText))
             .navigationTitle("选择标签")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索或创建标签")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("新建标签", systemImage: "plus") { showCreateTag = true }
@@ -254,6 +254,53 @@ struct TagPickerView: View {
     private func createTagFromSearch() {
         guard !trimmedSearchText.isEmpty else { return }
         addLocalTag(trimmedSearchText)
+    }
+}
+
+/// Keep search on the same canvas as the list. The navigation search drawer
+/// adds its own full-width glass material even with the bar background hidden.
+private struct TagSelectionBackground: ViewModifier {
+    @Binding var searchText: String
+    @FocusState private var isSearching: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .scrollEdgeEffectHidden(for: .top)
+            .scrollDismissesKeyboard(.interactively)
+            .contentMargins(.top, 12, for: .scrollContent)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    TextField("搜索或创建标签", text: $searchText)
+                        .focused($isSearching)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.search)
+                        .onSubmit { isSearching = false }
+                        .accessibilityLabel("搜索或创建标签")
+                    if !searchText.isEmpty {
+                        Button("清除标签搜索", systemImage: "xmark.circle.fill") {
+                            searchText = ""
+                        }
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                    }
+                }
+                .font(.body)
+                .padding(.leading, 16)
+                .padding(.trailing, searchText.isEmpty ? 16 : 4)
+                .frame(minHeight: 44)
+                .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color(.systemGroupedBackground))
+            }
     }
 }
 
@@ -869,9 +916,9 @@ struct BatchTagPickerView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .modifier(TagSelectionBackground(searchText: $searchText))
             .navigationTitle("编辑 \(itemIds.count) 条记录的标签")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索或创建标签")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("新建标签", systemImage: "plus") { showCreateTag = true }
