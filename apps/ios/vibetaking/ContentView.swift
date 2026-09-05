@@ -247,16 +247,13 @@ struct ContentView: View {
                     .accessibilityLabel("选择工作流")
                     Spacer(minLength: 0)
                 } else {
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 4) {
-                            workflowSettingsButton
-                            ForEach(workflowManager.openWorkflows) { workflow in
-                                workflowButton(for: workflow)
-                            }
+                    ViewThatFits(in: .horizontal) {
+                        workflowToolbarButtons
+                        ScrollView(.horizontal) {
+                            workflowToolbarButtons
                         }
-                        .padding(.horizontal, 4)
+                        .scrollIndicators(.hidden)
                     }
-                    .scrollIndicators(.hidden)
                     .fixedSize(horizontal: false, vertical: true)
                     // Keep the glass outside the scroll view so its shadow isn't clipped into a rectangle.
                     .controlSurface()
@@ -279,6 +276,16 @@ struct ContentView: View {
         .padding(.bottom, 8)
         .animation(focusTransition, value: isFocusMode)
         .sensoryFeedback(.impact(weight: .medium), trigger: isFocusMode)
+    }
+
+    private var workflowToolbarButtons: some View {
+        HStack(spacing: 4) {
+            workflowSettingsButton
+            ForEach(workflowManager.openWorkflows) { workflow in
+                workflowButton(for: workflow)
+            }
+        }
+        .padding(.horizontal, 4)
     }
 
     private var canRestoreDraft: Bool {
@@ -341,16 +348,23 @@ struct ContentView: View {
         return Button {
             handleWorkflowTap(workflow)
         } label: {
-            Group {
+            HStack(spacing: 8) {
                 if visibleLoadingWorkflowId == workflow.id {
                     ProgressView()
                 } else {
                     Image(systemName: workflow.icon).font(Design.controlFont)
                 }
+                if focused {
+                    Text(workflow.name)
+                        .font(.body.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
             .foregroundStyle(focused ? Color.white : Color.primary)
             .tint(focused ? Color.white : Design.primaryColor)
-            .frame(width: 44, height: focused ? 48 : 44)
+            .padding(.horizontal, focused ? 16 : 0)
+            .frame(width: focused ? nil : 44, height: focused ? 48 : 44)
             .frame(maxWidth: focused ? .infinity : nil)
             .contentShape(Capsule())
         }

@@ -606,6 +606,7 @@ struct HistoryView: View {
             }
         }
         .searchable(text: $searchText, prompt: searchPrompt)
+        .searchPresentationToolbarBehavior(.avoidHidingContent)
         .onChange(of: searchText) { _, newValue in
             handleSearchTextChange(newValue)
         }

@@ -12,6 +12,21 @@ enum Design {
 struct AppAppearance: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @MainActor
+    static func configureNavigationButtons() {
+        // iOS 26 doesn't inherit SwiftUI tint for its back chevron. Color the
+        // system indicator itself while preserving the native button and mask.
+        let defaults = UINavigationBarAppearance()
+        let color = UIColor(Design.primaryColor)
+        let palette = UIImage.SymbolConfiguration(paletteColors: [color])
+        let indicator = defaults.backIndicatorImage.applyingSymbolConfiguration(palette)?
+            .withRenderingMode(.alwaysOriginal)
+            ?? defaults.backIndicatorImage.withTintColor(color, renderingMode: .alwaysOriginal)
+        let navigationBar = UINavigationBar.appearance()
+        navigationBar.backIndicatorImage = indicator
+        navigationBar.backIndicatorTransitionMaskImage = defaults.backIndicatorTransitionMaskImage
+    }
+
     func body(content: Content) -> some View {
         content
             .tint(Design.primaryColor)

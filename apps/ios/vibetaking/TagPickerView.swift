@@ -454,6 +454,7 @@ nonisolated struct TagSelection: Equatable, Sendable {
 
 struct TagFilterBar: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .subheadline) private var filterTextHeight = 20.0
     private var filterRowHeight: Double { max(44, filterTextHeight + 16) + 16 }
 
@@ -545,6 +546,7 @@ struct TagFilterBar: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isSearching)
                         }
                         .scrollIndicators(.hidden)
                     }
@@ -703,7 +705,12 @@ struct FilterChip: View {
                         .foregroundStyle(Design.negativeColor)
                 }
                 Text(title)
-                if let count { Text(count.formatted()).foregroundStyle(.secondary) }
+                if let count {
+                    Text(count.formatted())
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
             }
             .font(.subheadline)
             .foregroundStyle(.primary)
@@ -711,6 +718,7 @@ struct FilterChip: View {
             .padding(.vertical, 8)
             .frame(minWidth: 44, minHeight: 44)
             .background(selectionState == nil ? Color(.tertiarySystemFill) : Design.primaryColor.opacity(0.10), in: Capsule())
+            .clipShape(Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
