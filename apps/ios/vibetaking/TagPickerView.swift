@@ -24,6 +24,8 @@ struct TagPickerView: View {
 
     @State private var recommendedTags: [String] = []
     @State private var recommendationTask: Task<Void, Never>? = nil
+    @State private var isRecommendingTags = false
+    @State private var recommendationMessage: String?
     
     private var currentItem: HistoryItem? {
         historyManager.items.first { $0.id == itemId }
@@ -114,16 +116,25 @@ struct TagPickerView: View {
 
         let availableTags = tagManager.tags
         let historyExamples = historyManager.tagRecommendationExamples(excluding: itemId)
+        isRecommendingTags = true
+        recommendationMessage = nil
         recommendationTask = Task {
-            let recommended = (try? await AIService.shared.recommendTags(
-                for: text,
-                from: availableTags,
-                historyExamples: historyExamples
-            )) ?? []
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
+            defer { isRecommendingTags = false }
+            do {
+                let recommended = try await AIService.shared.recommendTags(
+                    for: text,
+                    from: availableTags,
+                    historyExamples: historyExamples
+                )
+                guard !Task.isCancelled else { return }
                 self.recommendedTags = recommended
                 self.refreshSortedTags()
+                if recommended.isEmpty {
+                    recommendationMessage = "暂未找到合适的推荐标签，可继续手动选择。"
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                recommendationMessage = "AI 推荐暂时不可用，可继续手动选择标签。"
             }
         }
     }
@@ -131,16 +142,28 @@ struct TagPickerView: View {
     var body: some View {
         NavigationStack {
             List {
+                if isRecommendingTags {
+                    ProgressView("正在推荐标签，可先手动选择…")
+                        .font(.footnote)
+                } else if let recommendationMessage {
+                    Text(recommendationMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 if displayedTags.isEmpty {
                     ContentUnavailableView {
                         Label(trimmedSearchText.isEmpty ? "还没有标签" : "没有匹配的标签", systemImage: "tag")
                     } description: {
-                        Text("创建标签，方便之后找到相关记录。")
+                        Text(trimmedSearchText.isEmpty ? "给记录加上“工作”或“灵感”等标签，之后更容易找到。" : "试试其他名称，或把搜索内容创建为新标签。")
                     } actions: {
                         Button(canCreateTagFromSearch ? "创建“\(trimmedSearchText)”" : "新建标签") {
                             if canCreateTagFromSearch { createTagFromSearch() } else { showCreateTag = true }
                         }
                         .buttonStyle(.borderedProminent)
+                        if !trimmedSearchText.isEmpty {
+                            Button("清除标签搜索") { searchText = "" }
+                                .buttonStyle(.bordered)
+                        }
                     }
                     .listRowBackground(Color.clear)
                 } else {
@@ -154,7 +177,7 @@ struct TagPickerView: View {
                                 onEdit: { editingTagName = tagName }
                             )
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button("重命名", systemImage: "pencil") { editingTagName = tagName }
+                                Button("重命名标签", systemImage: "pencil") { editingTagName = tagName }
                             }
                         }
                     } footer: {
@@ -163,7 +186,7 @@ struct TagPickerView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("标签")
+            .navigationTitle("选择标签")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索或创建标签")
             .toolbar {
@@ -336,7 +359,7 @@ struct TagEditSheet: View {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("标签名称").font(.subheadline).foregroundStyle(.secondary)
-                        TextField("输入标签名称", text: $newTagName)
+                        TextField("例如：工作灵感", text: $newTagName)
                             .focused($isInputFocused)
                             .submitLabel(.done)
                             .onSubmit { saveTag() }
@@ -344,7 +367,7 @@ struct TagEditSheet: View {
                     }
                 } footer: {
                     Text(TagManager.shared.tags.contains(trimmedName) && trimmedName != tagName
-                         ? "保存后，使用此标签的记录会合并到已有的“\(trimmedName)”标签。"
+                         ? "“\(trimmedName)”已存在。保存后，两组标签将合并，记录正文不变。"
                          : "重命名会更新所有使用此标签的记录。")
                 }
             }
@@ -353,7 +376,7 @@ struct TagEditSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存", action: saveTag)
+                    Button("保存名称", action: saveTag)
                         .fontWeight(.semibold)
                         .disabled(trimmedName.isEmpty || trimmedName == tagName)
                 }
@@ -394,7 +417,7 @@ struct TagCreateSheet: View {
                             .accessibilityLabel("标签名称")
                     }
                 } footer: {
-                    Text("添加后会自动选中这个标签。")
+                    Text("创建后自动选中，关闭标签页时应用到记录。")
                 }
             }
             .navigationTitle("新建标签")
@@ -402,7 +425,7 @@ struct TagCreateSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("添加", action: addTag)
+                    Button("创建标签", action: addTag)
                         .fontWeight(.semibold)
                         .disabled(trimmedName.isEmpty)
                 }
@@ -526,7 +549,7 @@ struct TagFilterBar: View {
                                     
                                     FilterIconChip(
                                         systemImage: "shuffle",
-                                        accessibilityLabel: "随机",
+                                        accessibilityLabel: "随机回顾记录",
                                         isSelected: isRandomMode,
                                         usesDiceHaptics: true
                                     ) {
@@ -821,12 +844,16 @@ struct BatchTagPickerView: View {
                     ContentUnavailableView {
                         Label(trimmedSearchText.isEmpty ? "还没有标签" : "没有匹配的标签", systemImage: "tag")
                     } description: {
-                        Text("为所选的 \(itemIds.count) 条记录添加标签。")
+                        Text(trimmedSearchText.isEmpty ? "创建一个标签，为所选的 \(itemIds.count) 条记录分类。" : "试试其他名称，或创建新标签并应用到所选记录。")
                     } actions: {
                         Button(canCreateTagFromSearch ? "创建“\(trimmedSearchText)”" : "新建标签") {
                             if canCreateTagFromSearch { createTagFromSearch() } else { showCreateTag = true }
                         }
                         .buttonStyle(.borderedProminent)
+                        if !trimmedSearchText.isEmpty {
+                            Button("清除标签搜索") { searchText = "" }
+                                .buttonStyle(.bordered)
+                        }
                     }
                     .listRowBackground(Color.clear)
                 } else {
@@ -837,12 +864,12 @@ struct BatchTagPickerView: View {
                             }
                         }
                     } footer: {
-                        Text("更改会应用于所选的 \(itemIds.count) 条记录。减号表示部分记录已使用此标签。")
+                        Text("关闭时，更改会应用于所选的 \(itemIds.count) 条记录。减号表示部分记录已有此标签；点按可为全部所选记录添加。")
                     }
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("批量标签")
+            .navigationTitle("编辑 \(itemIds.count) 条记录的标签")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索或创建标签")
             .toolbar {

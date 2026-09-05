@@ -67,21 +67,21 @@ enum NotesImportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noFilesSelected:
-            return "没有选择文件"
+            return "请选择 .md、.markdown 文件，或包含这些文件的文件夹、ZIP 压缩包。"
         case .noImportableNotes:
-            return "没有找到可导入的 Markdown 记录"
+            return "所选内容中没有 Markdown 记录。请选择 .md、.markdown 文件，或包含这些文件的文件夹、ZIP 压缩包。"
         case .invalidZipArchive:
-            return "压缩包格式不正确"
+            return "这个 ZIP 压缩包无法读取。请重新下载，或解压后选择其中的 Markdown 文件。"
         case .unsupportedZipArchive:
-            return "暂不支持这个压缩包格式"
-        case .unsupportedCompressionMethod(let method):
-            return "暂不支持压缩方式 \(method)"
+            return "暂不支持这个压缩包格式。请先解压，再导入其中的 Markdown 文件。"
+        case .unsupportedCompressionMethod:
+            return "无法解压这种压缩方式。请先在“文件”App 中解压，再导入其中的 Markdown 文件。"
         case .corruptZipEntry(let name):
-            return "\(name) 读取失败"
+            return "“\(name)”无法读取。请重新下载文件，或解压后单独导入。"
         case .decompressionFailed:
-            return "压缩包解压失败"
+            return "未能解压这个文件。请重新下载，或解压后导入其中的 Markdown 文件。"
         case .fileTooLarge(let name):
-            return "\(name) 太大，已停止导入"
+            return "“\(name)”解压后超过 50 MB。请缩小该文件后重新打包，或解压后单独导入所需的 Markdown 文件。"
         }
     }
 }

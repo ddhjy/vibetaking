@@ -14,6 +14,7 @@ struct AgentDisplayBlock: Identifiable {
         case thinking(String)
         case toolCall(name: String, title: String, status: ToolStatus, result: String, isError: Bool)
         case errorNotice(String)
+        case statusNotice(String)
     }
 
     enum ToolStatus {
@@ -57,7 +58,25 @@ class AgentChatViewModel {
     }
 
     var sessionId: UUID { session.id }
-    var sessionTitle: String { session.title.isEmpty ? "新会话" : session.title }
+    var sessionTitle: String { session.title.isEmpty ? "新对话" : session.title }
+
+    private static func toolDisplayName(_ name: String) -> String {
+        switch name {
+        case "search_notes": "查找记录"
+        case "read_note": "读取记录"
+        case "save_note": "保存记录"
+        case "add_tags": "添加标签"
+        case "list_tags": "查看标签"
+        case "file_read": "读取文件"
+        case "file_write": "保存文件"
+        case "memory_write": "记住偏好"
+        case "memory_get": "查找记忆"
+        case "calendar_manage": "处理日历请求"
+        case "reminders_manage": "处理提醒事项请求"
+        case "clipboard_access": "访问剪贴板"
+        default: "处理任务"
+        }
+    }
 
     static func makeDefaultRegistry(sessionId: String = UUID().uuidString) -> ToolRegistry {
         var tools: [AgentTool] = [
@@ -124,9 +143,13 @@ class AgentChatViewModel {
                     self?.handle(event)
                 }
             } catch is CancellationError {
-                blocks.append(AgentDisplayBlock(kind: .errorNotice("已取消")))
+                blocks.append(AgentDisplayBlock(kind: .statusNotice("已停止处理。已完成的操作会保留，可以继续发送消息。")))
             } catch {
-                blocks.append(AgentDisplayBlock(kind: .errorNotice(Task.isCancelled ? "已取消" : error.userFacingDescription)))
+                if Task.isCancelled {
+                    blocks.append(AgentDisplayBlock(kind: .statusNotice("已停止处理。已完成的操作会保留，可以继续发送消息。")))
+                } else {
+                    blocks.append(AgentDisplayBlock(kind: .errorNotice(error.userFacingDescription)))
+                }
             }
         }
     }
@@ -153,7 +176,7 @@ class AgentChatViewModel {
             }
 
         case .toolCallStarted(let id, let name):
-            let block = AgentDisplayBlock(kind: .toolCall(name: name, title: name, status: .running, result: "", isError: false))
+            let block = AgentDisplayBlock(kind: .toolCall(name: name, title: Self.toolDisplayName(name), status: .running, result: "", isError: false))
             blocks.append(block)
             toolBlockIndex[id] = blocks.count - 1
 
@@ -161,7 +184,7 @@ class AgentChatViewModel {
             break
 
         case .toolCallFinished(let id, let name, let result, let isError):
-            let title = Self.extractToolTitle(from: engine.agentHistory, toolId: id) ?? name
+            let title = Self.extractToolTitle(from: engine.agentHistory, toolId: id) ?? Self.toolDisplayName(name)
             if let index = toolBlockIndex[id], index < blocks.count {
                 blocks[index].kind = .toolCall(name: name, title: title, status: isError ? .failed : .done, result: result, isError: isError)
             } else {
@@ -212,7 +235,7 @@ class AgentChatViewModel {
                         blocks.append(AgentDisplayBlock(kind: .assistantText(text)))
                     }
                 case .toolUse(let id, let name, let input):
-                    let title = (input["tool_title"] as? String) ?? name
+                    let title = (input["tool_title"] as? String) ?? Self.toolDisplayName(name)
                     let result = resultsByToolId[id]
                     blocks.append(AgentDisplayBlock(kind: .toolCall(
                         name: name,
@@ -260,10 +283,16 @@ struct AgentChatView: View {
     @State private var viewModel: AgentChatViewModel
     @State private var permissionManager = OffloadPermissionManager.shared
     @State private var showSessionList = false
+    @State private var showSettings = false
+    @State private var settings = SettingsManager.shared
     @FocusState private var inputFocused: Bool
 
     init(session: AgentChatSession? = nil) {
         _viewModel = State(initialValue: AgentChatViewModel(session: session))
+    }
+
+    private var hasAIKey: Bool {
+        !(settings.aiApiToken ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -277,6 +306,10 @@ struct AgentChatView: View {
                         ForEach(viewModel.blocks) { block in
                             blockView(block)
                                 .id(block.id)
+                        }
+                        if viewModel.isRunning {
+                            ProgressView("助手正在处理，可随时停止…")
+                                .font(.subheadline)
                         }
                         Color.clear.frame(height: 1).id("conversation-bottom")
                     }
@@ -333,18 +366,18 @@ struct AgentChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("新会话", systemImage: "square.and.pencil") {
+                Menu("对话操作", systemImage: "ellipsis") {
+                    Button("开始新对话", systemImage: "square.and.pencil") {
                         viewModel.cancel()
                         viewModel = AgentChatViewModel()
                     }
-                    Button("历史会话", systemImage: "clock.arrow.circlepath") {
+                    Button("查看历史对话", systemImage: "clock.arrow.circlepath") {
                         showSessionList = true
                     }
-                } label: {
-                    AppToolbarMoreLabel()
+                    Button("AI 设置", systemImage: "gearshape") { showSettings = true }
                 }
-                .accessibilityLabel("更多")
+                .labelStyle(.iconOnly)
+                .accessibilityLabel("对话操作")
             }
         }
         .sheet(isPresented: $showSessionList) {
@@ -354,6 +387,7 @@ struct AgentChatView: View {
                 showSessionList = false
             }
         }
+        .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(item: Binding(
             get: { permissionManager.pendingRequest },
             set: { newValue in
@@ -375,23 +409,31 @@ struct AgentChatView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("向你的笔记提问", systemImage: "sparkles")
+            Label(hasAIKey ? "让助手帮你整理记录" : "连接 AI，开始整理记录", systemImage: "sparkles")
         } description: {
-            Text("查找想法、整理记录，或为笔记推荐标签。")
+            Text(hasAIKey
+                 ? "查找想法、总结内容，或给记录加标签。选一个示例，修改后发送。相关记录会发送到你设置的 AI 服务。"
+                 : "填写服务商提供的 AI 密钥后，就能查找和整理记录。你仍可随时返回主页继续记录。")
         } actions: {
             VStack(spacing: 10) {
-                ForEach(["回顾上周关于工作的想法", "整理最近的读书笔记", "为未分类的记录推荐标签"], id: \.self) { prompt in
-                    Button {
-                        viewModel.inputText = prompt
-                        inputFocused = true
-                    } label: {
-                        Text(prompt)
-                            .font(.subheadline)
-                            .foregroundStyle(Color.primary)
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                if !hasAIKey {
+                    Button("连接 AI 服务") { showSettings = true }
+                        .buttonStyle(.borderedProminent)
+                }
+                if hasAIKey {
+                    ForEach(["回顾上周关于工作的想法", "整理最近的读书笔记", "为未分类的记录推荐标签"], id: \.self) { prompt in
+                        Button {
+                            viewModel.inputText = prompt
+                            inputFocused = true
+                        } label: {
+                            Text(prompt)
+                                .font(.subheadline)
+                                .foregroundStyle(Color.primary)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityHint("填入输入框，可以修改后发送")
                     }
-                    .buttonStyle(.bordered)
-                    .accessibilityHint("填入输入框，可以修改后发送")
                 }
             }
         }
@@ -436,7 +478,7 @@ struct AgentChatView: View {
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if isError { Label("执行失败", systemImage: "exclamationmark.circle").font(.footnote) }
+                    if isError { Label("这一步未完成。可查看详情，再告诉助手如何继续。", systemImage: "exclamationmark.circle").font(.footnote) }
                 }
                 .padding(.bottom, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -457,19 +499,30 @@ struct AgentChatView: View {
             .padding(.horizontal, 12)
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
         case .errorNotice(let message):
-            Label {
-                Text(message).foregroundStyle(.primary)
-            } icon: {
-                Image(systemName: "exclamationmark.circle").foregroundStyle(Design.negativeColor)
+            VStack(alignment: .leading, spacing: 8) {
+                Label {
+                    Text(message).foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(Design.negativeColor)
+                }
+                .font(.subheadline)
+                .padding(.vertical, 8)
+                if !hasAIKey {
+                    Button("连接 AI 服务") { showSettings = true }
+                        .buttonStyle(.bordered)
+                }
             }
-            .font(.subheadline)
-            .padding(.vertical, 8)
+        case .statusNotice(let message):
+            Label(message, systemImage: "stop.circle")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 8)
         }
     }
 
     private var inputBar: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("问点什么…", text: Bindable(viewModel).inputText, axis: .vertical)
+            TextField("想查找或整理哪些记录？", text: Bindable(viewModel).inputText, axis: .vertical)
                 .font(.body)
                 .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 3 : 6))
                 .focused($inputFocused)
@@ -480,7 +533,7 @@ struct AgentChatView: View {
                 .onSubmit { viewModel.send() }
 
             if viewModel.isRunning {
-                Button("停止生成", systemImage: "stop.fill") { viewModel.cancel() }
+                Button("停止处理", systemImage: "stop.fill") { viewModel.cancel() }
                     .labelStyle(.iconOnly)
                     .font(Design.controlFont)
                     .frame(minWidth: 44, minHeight: 44)
@@ -517,15 +570,21 @@ struct AgentSessionListView: View {
         NavigationStack {
             List {
                 if store.sessions.isEmpty {
-                    ContentUnavailableView("还没有会话", systemImage: "bubble.left.and.bubble.right", description: Text("向助手发送消息后，会话会保存在这里。"))
-                        .listRowBackground(Color.clear)
+                    ContentUnavailableView {
+                        Label("还没有历史对话", systemImage: "bubble.left.and.bubble.right")
+                    } description: {
+                        Text("与助手的对话会保存在这里，方便下次接着聊。")
+                    } actions: {
+                        Button("返回 AI 助手") { dismiss() }.buttonStyle(.borderedProminent)
+                    }
+                    .listRowBackground(Color.clear)
                 }
                 ForEach(store.sessions) { session in
                     Button {
                         onSelect(session)
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(session.title.isEmpty ? "未命名会话" : session.title)
+                            Text(session.title.isEmpty ? "未命名对话" : session.title)
                                 .font(.body)
                                 .lineLimit(2)
                                 .foregroundStyle(.primary)
@@ -536,17 +595,17 @@ struct AgentSessionListView: View {
                     }
                     .padding(.vertical, 4)
                     .swipeActions(allowsFullSwipe: false) {
-                        Button("删除会话", systemImage: "trash", role: .destructive) { sessionToDelete = session }
+                        Button("删除对话", systemImage: "trash", role: .destructive) { sessionToDelete = session }
                     }
                 }
             }
             .listStyle(.insetGrouped)
             .alert(item: $sessionToDelete) { session in
-                Alert(title: Text("删除这段会话？"), message: Text("会话内容删除后不可恢复。"),
-                      primaryButton: .destructive(Text("删除会话")) { store.delete(session.id) },
-                      secondaryButton: .cancel(Text("取消")))
+                Alert(title: Text("删除这段对话？"), message: Text("消息将被永久删除，无法恢复。助手已保存的记录和已执行的设备操作不受影响。"),
+                      primaryButton: .destructive(Text("删除对话")) { store.delete(session.id) },
+                      secondaryButton: .cancel(Text("保留对话")))
             }
-            .navigationTitle("历史会话")
+            .navigationTitle("历史对话")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

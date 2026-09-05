@@ -374,8 +374,7 @@ class AIService {
     }
 
     private func formatHTTPError(statusCode: Int, data: Data) -> String {
-        let message = decodeErrorMessage(from: data) ?? "HTTP \(statusCode)"
-        return message.hasPrefix("HTTP ") ? message : "HTTP \(statusCode)，\(message)"
+        UserFacingError.aiHTTP(statusCode: statusCode)
     }
 
     private func decodeErrorMessage(from data: Data) -> String? {
@@ -414,19 +413,15 @@ enum AIServiceError: LocalizedError {
     
     var errorDescription: String? {
         switch self {
-        case .missingToken: return "请先在设置中填写 AI 密钥"
-        case .invalidURL: return "AI 服务地址异常，请联系管理员"
+        case .missingToken: return UserFacingError.missingAICredentials
+        case .invalidURL: return UserFacingError.invalidAIAddress
         case .requestFailed(let message):
             if let message, !message.isEmpty {
-                return "AI 请求失败：\(message)"
+                return message
             }
-            return "AI 请求失败，请稍后重试"
-        case .invalidResponse(let message):
-            if let message, !message.isEmpty {
-                return "AI 返回异常：\(message)"
-            }
-            return "AI 返回内容异常，请检查服务配置"
-        case .emptyResponse: return "AI 未返回结果，请调整提示词后重试"
+            return "AI 请求未完成。请检查网络和服务设置后再试一次。"
+        case .invalidResponse: return UserFacingError.invalidAIResponse
+        case .emptyResponse: return "AI 没有返回文本。请换一种说法，或检查所选模型是否支持文本生成。"
         }
     }
 }

@@ -29,7 +29,7 @@ private struct WorkflowEditButton: View {
     }
 
     var body: some View {
-        Button(isEditing ? "完成" : "编辑") {
+        Button(isEditing ? "完成排序" : "调整顺序") {
             withAnimation {
                 editMode?.wrappedValue = isEditing ? .inactive : .active
             }
@@ -86,23 +86,23 @@ struct WorkflowConfigView: View {
         .alert(item: $workflowToDelete) { workflow in
             Alert(
                 title: Text("删除“\(displayName(for: workflow))”？"),
-                message: Text("此工作流及其步骤将被删除，记录内容不受影响。"),
+                message: Text("此工作流及其步骤将被永久删除，无法撤销。已保存的记录不受影响。"),
                 primaryButton: .destructive(Text("删除工作流")) {
                     workflowManager.deleteWorkflow(workflow.id)
                     compactPath.removeAll { $0 == workflow.id }
                     detailWorkflowId = workflowManager.selectedWorkflowId
                 },
-                secondaryButton: .cancel(Text("取消"))
+                secondaryButton: .cancel(Text("保留工作流"))
             )
         }
-        .confirmationDialog("删除所选步骤？", isPresented: $confirmNodeDeletion, titleVisibility: .visible) {
+        .confirmationDialog("删除这 \(nodeOffsetsToDelete.count) 个步骤？", isPresented: $confirmNodeDeletion, titleVisibility: .visible) {
             Button("删除步骤", role: .destructive) {
                 workflowManager.deleteNodes(at: nodeOffsetsToDelete)
                 nodeOffsetsToDelete = []
             }
-            Button("取消", role: .cancel) { nodeOffsetsToDelete = [] }
+            Button("保留步骤", role: .cancel) { nodeOffsetsToDelete = [] }
         } message: {
-            Text("删除后，此工作流将不再执行这些步骤。")
+            Text("删除后无法撤销。此工作流将不再执行这些步骤，其他步骤保持不变。")
         }
         .sheet(item: $presentation) { item in
             presentationView(for: item)
@@ -177,16 +177,12 @@ struct WorkflowConfigView: View {
                     }
                     .onMove { workflowManager.moveWorkflows(inOpenState: false, from: $0, to: $1) }
                 } header: {
-                    Text("不显示")
+                    Text("已从主页隐藏")
                 }
             }
 
             Section {
-                Button {
-                    addWorkflow()
-                } label: {
-                    Label("新建工作流", systemImage: "plus.circle.fill")
-                }
+                addWorkflowButton
             }
         }
         .listStyle(.insetGrouped)
@@ -238,16 +234,12 @@ struct WorkflowConfigView: View {
                     }
                     .onMove { workflowManager.moveWorkflows(inOpenState: false, from: $0, to: $1) }
                 } header: {
-                    Text("不显示")
+                    Text("已从主页隐藏")
                 }
             }
 
             Section {
-                Button {
-                    addWorkflow()
-                } label: {
-                    Label("新建工作流", systemImage: "plus.circle.fill")
-                }
+                addWorkflowButton
             }
         }
         .listStyle(.sidebar)
@@ -257,6 +249,15 @@ struct WorkflowConfigView: View {
             ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
             WorkflowEditToolbarItem()
         }
+    }
+
+    private var addWorkflowButton: some View {
+        Button(action: addWorkflow) {
+            Label("新建工作流", systemImage: "plus.circle.fill")
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(WorkflowConfigStyle.controlTint)
+        }
+        .tint(WorkflowConfigStyle.controlTint)
     }
 
     private func workflowDetail(for workflow: Workflow) -> some View {
@@ -333,6 +334,17 @@ struct WorkflowConfigView: View {
 
     @ViewBuilder
     private func manualWorkflowEditor(for workflow: Workflow) -> some View {
+        if !workflow.nodes.isEmpty {
+            Section {
+                Label(workflow.nodes.contains(where: { $0.isEnabled && $0.type == .save })
+                      ? "运行时清空输入框，可继续写下一条。全部步骤完成后保存为记录。"
+                      : "运行时清空输入框，结果不会存入记录列表。要保留结果，请添加“保存记录”步骤。",
+                      systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
         Section {
             if workflow.nodes.isEmpty {
                 EmptyWorkflowNodesView {
@@ -356,7 +368,7 @@ struct WorkflowConfigView: View {
             Text("处理步骤")
         } footer: {
             if !workflow.nodes.isEmpty {
-                Text("步骤从上到下依次执行。点按步骤编辑，点按“编辑”调整顺序。")
+                Text("启用的步骤从上到下执行。点按步骤修改配置，点按“调整顺序”排序。更改自动保存。")
             }
         }
 
@@ -407,7 +419,7 @@ struct WorkflowConfigView: View {
             Button(role: .destructive) {
                 workflowToDelete = workflow
             } label: {
-                Label("删除", systemImage: "trash")
+                Label("删除工作流", systemImage: "trash")
             }
         }
     }
@@ -442,7 +454,7 @@ struct WorkflowConfigView: View {
 
         let enabledCount = workflow.nodes.filter { $0.isEnabled }.count
         let totalCount = workflow.nodes.count
-        return "\(visibility) · \(enabledCount)/\(totalCount) 步骤启用"
+        return "\(visibility) · 已启用 \(enabledCount) 个步骤，共 \(totalCount) 个"
     }
 
     private func displayName(for workflow: Workflow) -> String {
@@ -570,7 +582,7 @@ private struct EmptyWorkflowNodesView: View {
             VStack(spacing: 4) {
                 Text("还没有步骤")
                     .font(.headline)
-                Text("添加步骤来定义草稿的处理方式。")
+                Text("添加“保存记录”即可保留想法，也可加入 AI 改写、复制或发送步骤。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -640,7 +652,7 @@ struct NodeRowView: View {
 
     private var nodeDetail: String? {
         if !node.isEnabled {
-            return "已关闭"
+            return "已停用，运行时会跳过"
         }
 
         if node.type == .aiProcess, let prompt = node.config.aiPrompt, !prompt.isEmpty {
@@ -747,11 +759,15 @@ struct EditNodeSheet: View {
                     Text(node.type.explanation).font(.subheadline).foregroundStyle(.secondary)
                 }
                 if node.type == .aiProcess {
-                    Section("AI 提示词") {
+                    Section {
                         TextEditor(text: $aiPrompt)
                             .font(.body)
                             .frame(minHeight: 140)
-                            .accessibilityLabel("AI 提示词")
+                            .accessibilityLabel("改写要求")
+                    } header: {
+                        Text("改写要求")
+                    } footer: {
+                        Text("例如：整理成三条要点，保留人名和日期。请先填写要求，再运行工作流。")
                     }
                 }
 
@@ -760,11 +776,11 @@ struct EditNodeSheet: View {
                         TextEditor(text: $agentPrompt)
                             .font(.body)
                             .frame(minHeight: 140)
-                            .accessibilityLabel("助手指令")
+                            .accessibilityLabel("任务指令")
                     } header: {
-                        Text("助手指令")
+                        Text("任务指令")
                     } footer: {
-                        Text("AI 助手可调用工具完成任务，最终结果传给下一步。")
+                        Text("例如：查找与这段文字相关的记录，整理成三条要点。助手可使用记录和已授权的设备功能；最终文本交给下一步。")
                     }
                 }
 
@@ -784,7 +800,7 @@ struct EditNodeSheet: View {
                                     httpHost = resolved.host
                                     httpPort = "\(resolved.port)"
                                 } else {
-                                    resolutionError = "暂时无法连接此设备。保存后，发送时会重新查找。"
+                                    resolutionError = "暂时无法获取这台 Mac 的地址。请确认随心记已打开、两台设备在同一网络；发送时会再次查找。"
                                 }
                             }
                         },
@@ -796,7 +812,7 @@ struct EditNodeSheet: View {
                         }
                     )
 
-                    if isResolvingDevice { ProgressView("正在连接设备…") }
+                    if isResolvingDevice { ProgressView("正在获取 Mac 地址…") }
                     if let resolutionError {
                         Label(resolutionError, systemImage: "exclamationmark.circle").font(.footnote)
                     }
@@ -817,9 +833,9 @@ struct EditNodeSheet: View {
                                     .accessibilityLabel("端口")
                             }
                         } header: {
-                            Text("HTTP 配置")
+                            Text("手动填写接收地址")
                         } footer: {
-                            Text(isValid ? "未绑定设备时，内容发送到此地址。" : "填写主机名或 IP 地址（不含 http:// 和路径），以及 1–65535 之间的端口。")
+                            Text(isValid ? "文本通过 HTTP 发送到此地址。使用 Mac 端时，请填写其设置页显示的局域网地址和端口。" : "填写主机名或 IP 地址（不含 http:// 和路径），以及 1–65535 之间的端口。")
                         }
                     }
                 }
@@ -831,11 +847,11 @@ struct EditNodeSheet: View {
             .onDisappear { deviceResolutionTask?.cancel() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    if hasEditableConfiguration { Button("取消") { dismiss() } }
+                    if hasEditableConfiguration { Button("放弃修改") { dismiss() } }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     if hasEditableConfiguration {
-                        Button("保存") { saveChanges() }
+                        Button("保存步骤") { saveChanges() }
                             .disabled(!isValid)
                             .fontWeight(.semibold)
                     } else {
@@ -889,14 +905,14 @@ struct DeviceBindingSection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(boundServiceName)
                             .font(.callout.weight(.medium))
-                        Text(isBoundDeviceOnline ? "在线" : "离线，发送时自动重连")
+                        Text(isBoundDeviceOnline ? "已发现，发送时连接" : "暂未发现，发送时会再次查找")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
 
                     Spacer()
 
-                    Button("解除绑定", role: .destructive, action: onUnbind)
+                    Button("改为手动地址", role: .destructive, action: onUnbind)
                         .font(.body)
                         .frame(minHeight: 44)
                         .buttonStyle(.borderless)
@@ -918,7 +934,7 @@ struct DeviceBindingSection: View {
         } header: {
             Text("附近设备")
         } footer: {
-            Text("需要 Mac 端应用已运行，且两台设备连接同一网络。首次使用会请求「本地网络」权限。")
+            Text("在 Mac 上打开随心记，并连接同一网络。选择设备后，发送时会自动查找其地址。")
         }
         .onAppear { discovery.start() }
         .onDisappear { discovery.stop() }
@@ -949,14 +965,14 @@ struct DeviceBindingSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-        case .failed(let message):
+        case .failed:
             VStack(alignment: .leading, spacing: 6) {
-                Text("无法搜索附近设备")
+                Text("暂时无法查找 Mac")
                     .font(.callout)
-                Text(message)
+                Text("请检查两台设备的网络连接，以及 Mac 上的随心记是否已打开。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("请在「设置 → 隐私与安全性 → 本地网络」中允许随心记访问。")
+                Text("如果尚未授权，请到 iPhone“设置 → 隐私与安全性 → 本地网络”开启随心记，然后重新打开此页。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1154,11 +1170,11 @@ struct IconPickerView: View {
 private extension WorkflowNodeType {
     var explanation: String {
         switch self {
-        case .aiProcess: "根据提示词处理文本，把结果交给下一步。"
-        case .agentProcess: "让 AI 助手结合笔记和工具完成任务。"
+        case .aiProcess: "按你的要求改写、摘要或翻译文本，再把结果交给下一步。"
+        case .agentProcess: "让 AI 助手查找记录、整理内容或使用已授权的设备功能，返回文本结果。"
         case .copyToClipboard: "将当前文本复制到系统剪贴板，供其他 App 粘贴。"
-        case .save: "将处理后的文本和草稿标签保存到记录中。"
-        case .httpPost: "将文本发送到同一网络中的 Mac 或指定地址。"
+        case .save: "全部步骤完成后，将最终文本和草稿标签保存为一条记录。"
+        case .httpPost: "将文本发送到 Mac 接收端或指定 HTTP 地址。草稿为空时运行，会发送回车指令。"
         }
     }
 }

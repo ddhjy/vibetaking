@@ -23,7 +23,7 @@ struct OffloadPermissionDialog: View {
                             .font(.largeTitle)
                             .foregroundStyle(Design.primaryColor)
                             .accessibilityHidden(true)
-                        Text("允许 AI 访问\(request.displayLabel)？")
+                        Text("允许 AI 助手访问\(request.displayLabel)？")
                             .font(.title2.bold())
                             .accessibilityAddTraits(.isHeader)
                         if !request.description.isEmpty {
@@ -35,7 +35,7 @@ struct OffloadPermissionDialog: View {
 
                     if !request.parsedArguments.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
-                            Text("访问详情").font(.headline).accessibilityAddTraits(.isHeader)
+                            Text("本次操作详情").font(.headline).accessibilityAddTraits(.isHeader)
                             ForEach(Array(request.parsedArguments.enumerated()), id: \.offset) { _, pair in
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(pair.key).font(.subheadline).foregroundStyle(.secondary)
@@ -49,7 +49,7 @@ struct OffloadPermissionDialog: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Text("允许后，本次会话内访问此项权限将不再询问。")
+                    Text("允许后，这次对话再次访问\(request.displayLabel)时不再询问。不允许则跳过本次设备操作。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -62,7 +62,7 @@ struct OffloadPermissionDialog: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 10) {
                     Button { manager.respond(to: request.id, allowed: true) } label: {
-                        Text("本次会话允许").frame(maxWidth: .infinity, minHeight: 44)
+                        Text("允许本次对话访问").frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
                     Button { manager.respond(to: request.id, allowed: false) } label: {
@@ -116,7 +116,7 @@ struct OffloadPermissionSettingsView: View {
                     .pickerStyle(.navigationLink)
                 }
             } footer: {
-                Text("选择“每段会话询问”后，AI 会在每段会话首次访问时请求允许。")
+                Text("“每次对话首次询问”会在新对话首次访问时征求同意；“始终允许”不再显示此确认；“不允许”会阻止访问。系统日历和提醒事项权限仍需单独开启。")
             }
         }
         .navigationTitle("设备权限")

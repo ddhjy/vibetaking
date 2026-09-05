@@ -4,6 +4,8 @@
 
 当前界面的 Apple HIG 依据见 [iOS HIG 审视清单](../../docs/ios-hig-audit.md)，页面操作、修复及截图见 [逐页走查记录](../../docs/ios-ui-walkthrough.md)，维护约定见 [设计规范](../../DESIGN.md)，权限交互回归见 [测试说明](tests/README.md)。
 
+全链路文案前后对比、错误反馈和界面截图见 [UX Writing 审视记录](../../docs/ux-writing-audit.md)。
+
 ![应用演示](../../docs/demo.png)
 
 ## 功能

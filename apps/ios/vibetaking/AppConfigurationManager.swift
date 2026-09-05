@@ -31,15 +31,15 @@ enum AppConfigurationImportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noFileSelected:
-            return "没有选择配置文件"
+            return "请选择从随心记导出的 JSON 配置文件。"
         case .fileTooLarge:
-            return "配置文件太大，已停止导入"
+            return "配置文件超过 5 MB。请选择不超过 5 MB 的随心记 JSON 配置文件。"
         case .invalidFile:
-            return "配置文件格式不正确"
+            return "这个文件不是可用的随心记配置。请在原设备重新导出 JSON 配置后再导入。"
         case .unsupportedVersion(let version):
-            return "暂不支持版本 \(version) 的配置文件"
+            return "当前 App 不支持版本 \(version) 的配置格式。请将两台设备上的随心记更新到相同版本，再重新导出。"
         case .emptyWorkflows:
-            return "配置文件中没有可导入的 Workflow"
+            return "配置文件中没有工作流。请在原设备添加至少一个工作流，再重新导出配置。"
         }
     }
 }

@@ -16,11 +16,11 @@ enum WorkflowNodeType: String, Codable, CaseIterable {
     
     var displayName: String {
         switch self {
-        case .aiProcess: "AI 处理"
+        case .aiProcess: "AI 改写文本"
         case .agentProcess: "AI 助手"
-        case .copyToClipboard: "复制"
+        case .copyToClipboard: "复制文本"
         case .save: "保存记录"
-        case .httpPost: "HTTP 发送"
+        case .httpPost: "发送到 Mac 或网址"
         }
     }
     
@@ -112,7 +112,7 @@ struct Workflow: Identifiable, Codable, Equatable {
 
     init(
         id: UUID = UUID(),
-        name: String = "默认 Workflow",
+        name: String = "默认工作流",
         icon: String = "arrow.triangle.branch",
         kind: WorkflowKind = .manual,
         isOpen: Bool = true,
@@ -409,7 +409,7 @@ class WorkflowManager {
             throw NSError(
                 domain: "WorkflowManager",
                 code: -2,
-                userInfo: [NSLocalizedDescriptionKey: "该 Workflow 已不存在"]
+                userInfo: [NSLocalizedDescriptionKey: "这个工作流已被删除。请返回工作流设置，选择其他工作流。"]
             )
         }
 
@@ -417,7 +417,7 @@ class WorkflowManager {
             throw NSError(
                 domain: "WorkflowManager",
                 code: -3,
-                userInfo: [NSLocalizedDescriptionKey: "该 Workflow 为开关型，请直接切换开关"]
+                userInfo: [NSLocalizedDescriptionKey: "这个旧版工作流已不再支持。请在工作流设置中新建工作流。"]
             )
         }
         
@@ -456,7 +456,7 @@ class WorkflowManager {
             case .httpPost:
                 let target = await resolveHTTPNodeTarget(node.config)
                 guard let url = HTTPTargetURL.make(host: target.host, port: target.port) else {
-                    throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "目标地址格式有误，请检查主机和端口"])
+                    throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "发送地址无法使用。请在工作流的发送步骤中填写主机名或 IP 地址，以及 1–65535 之间的端口。"])
                 }
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
@@ -464,7 +464,7 @@ class WorkflowManager {
                 request.setValue("text/plain; charset=utf-8", forHTTPHeaderField: "Content-Type")
                 let (_, response) = try await URLSession.shared.data(for: request)
                 if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                    throw NSError(domain: "WorkflowManager", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "发送失败，请检查目标地址是否正确"])
+                    throw NSError(domain: "WorkflowManager", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "接收端未接受请求。请确认 Mac 上已打开随心记，并检查发送步骤中的地址和端口。"])
                 }
 
             case .copyToClipboard:
@@ -495,7 +495,7 @@ class WorkflowManager {
             throw NSError(
                 domain: "WorkflowManager",
                 code: -2,
-                userInfo: [NSLocalizedDescriptionKey: "该 Workflow 已不存在"]
+                userInfo: [NSLocalizedDescriptionKey: "这个工作流已被删除。请返回工作流设置，选择其他工作流。"]
             )
         }
 
@@ -509,13 +509,13 @@ class WorkflowManager {
         for node in httpNodes {
             let target = await resolveHTTPNodeTarget(node.config)
             guard let url = HTTPTargetURL.make(host: target.host, port: target.port, path: "/send") else {
-                throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "目标地址格式有误，请检查主机和端口"])
+                throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "发送地址无法使用。请在工作流的发送步骤中填写主机名或 IP 地址，以及 1–65535 之间的端口。"])
             }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                throw NSError(domain: "WorkflowManager", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "发送失败，请检查目标地址是否正确"])
+                throw NSError(domain: "WorkflowManager", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "接收端未接受请求。请确认 Mac 上已打开随心记，并检查发送步骤中的地址和端口。"])
             }
         }
 
@@ -584,7 +584,7 @@ class WorkflowManager {
             throw NSError(
                 domain: "WorkflowManager",
                 code: -4,
-                userInfo: [NSLocalizedDescriptionKey: "Agent 未返回文本结果，请调整任务指令"]
+                userInfo: [NSLocalizedDescriptionKey: "AI 助手没有返回文本。请在步骤指令中说明需要输出什么，再运行工作流。"]
             )
         }
         return trimmed

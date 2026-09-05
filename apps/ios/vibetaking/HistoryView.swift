@@ -191,7 +191,7 @@ struct HistoryView: View {
     }
 
     private var searchPrompt: String {
-        isSearchActive ? "多个关键词用空格分隔" : "搜索内容或标签"
+        isSearchActive ? "空格分隔，匹配全部关键词" : "搜索内容或标签"
     }
     
     private func rebuildListCacheAsync() {
@@ -293,7 +293,7 @@ struct HistoryView: View {
         .sensoryFeedback(.impact(weight: .medium), trigger: mediumHapticTrigger)
         .overlay(alignment: .top) {
             if showBatchCopiedToast {
-                Text("已复制 \(batchCopiedCount) 条")
+                Text("已复制 \(batchCopiedCount) 条记录")
                     .font(.footnote)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -321,10 +321,13 @@ struct HistoryView: View {
                     }) {
                         Text("完成").fontWeight(.semibold)
                     }
+                } else if isExporting || isImporting {
+                    ProgressView()
+                        .accessibilityLabel(isExporting ? "正在导出记录" : "正在导入记录")
                 } else {
-                    Menu {
+                    Menu("记录操作", systemImage: "ellipsis") {
                         Button(action: { showImportPicker = true }) {
-                            Label("导入", systemImage: "square.and.arrow.down")
+                            Label("导入记录", systemImage: "square.and.arrow.down")
                         }
                         .disabled(isImporting || historyManager.isLoading)
                         
@@ -342,18 +345,17 @@ struct HistoryView: View {
                             Button("随机回顾", systemImage: "shuffle") { randomizeDisplayOrder() }
 
                             Button(action: { showStatistics = true }) {
-                                Label("统计", systemImage: "chart.bar")
+                                Label("记录统计", systemImage: "chart.bar")
                             }
                             
                             Button(action: exportNotes) {
-                                Label("导出", systemImage: "square.and.arrow.up")
+                                Label("导出全部记录", systemImage: "square.and.arrow.up")
                             }
                             .disabled(isExporting)
                         }
-                    } label: {
-                        AppToolbarMoreLabel(isLoading: isExporting || isImporting)
                     }
-                    .accessibilityLabel("更多")
+                    .labelStyle(.iconOnly)
+                    .accessibilityLabel("记录操作")
                     .id(AppToolbarIdentity.moreButton)
                 }
             }
@@ -384,7 +386,7 @@ struct HistoryView: View {
                     .disabled(selectedItems.isEmpty)
 
                     Button(action: { showBatchTagPicker = true }) {
-                        Label("批量标签", systemImage: "tag").labelStyle(.iconOnly)
+                        Label("编辑所选记录的标签", systemImage: "tag").labelStyle(.iconOnly)
                     }
                     .tint(Design.primaryColor)
                     .disabled(selectedItems.isEmpty)
@@ -412,14 +414,14 @@ struct HistoryView: View {
             rebuildListCacheAsync()
         }
         .alert("删除这 \(selectedItems.count) 条记录？", isPresented: $showClearConfirmation) {
-            Button("取消", role: .cancel) { }
-            Button("删除", role: .destructive) {
+            Button("保留记录", role: .cancel) { }
+            Button("删除 \(selectedItems.count) 条记录", role: .destructive) {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     deleteSelectedItems()
                 }
             }
         } message: {
-            Text("删除后不可恢复")
+            Text("所选记录将被永久删除，无法撤销。使用 iCloud 时，删除也会同步到其他设备。")
         }
         .sheet(item: $tagPickerItem) { item in
             TagPickerView(itemId: item.id)
@@ -449,7 +451,7 @@ struct HistoryView: View {
             Alert(
                 title: Text(alert.title),
                 message: Text(alert.message),
-                dismissButton: .default(Text("好"))
+                dismissButton: .default(Text("返回记录"))
             )
         }
         .onAppear {
@@ -481,7 +483,7 @@ struct HistoryView: View {
                 exportedFileURL = url
             } catch {
                 isExporting = false
-                importAlert = ImportAlert(title: "导出失败", message: error.localizedDescription)
+                importAlert = ImportAlert(title: "记录未能导出", message: error.userFacingDescription)
             }
         }
     }
@@ -491,7 +493,7 @@ struct HistoryView: View {
         case .success(let urls):
             importNotes(from: urls)
         case .failure(let error):
-            importAlert = ImportAlert(title: "导入失败", message: error.localizedDescription)
+            importAlert = ImportAlert(title: "记录未能导入", message: error.userFacingDescription)
         }
     }
     
@@ -506,24 +508,24 @@ struct HistoryView: View {
                 showImportResult(result)
             } catch {
                 isImporting = false
-                importAlert = ImportAlert(title: "导入失败", message: error.localizedDescription)
+                importAlert = ImportAlert(title: "记录未能导入", message: error.userFacingDescription)
                 print("Import failed: \(error)")
             }
         }
     }
     
     private func showImportResult(_ result: NotesImportResult) {
-        let skippedText = result.skippedCount > 0 ? "，跳过 \(result.skippedCount) 条重复或空记录" : ""
+        let skippedText = result.skippedCount > 0 ? "，已跳过 \(result.skippedCount) 条重复、空白或无法解析的记录" : ""
         
         if result.importedCount > 0 {
             importAlert = ImportAlert(
                 title: "导入完成",
-                message: "已导入 \(result.importedCount) 条记录\(skippedText)"
+                message: "已导入 \(result.importedCount) 条记录\(skippedText)。可在记录列表中查看。"
             )
         } else {
             importAlert = ImportAlert(
-                title: "没有新内容",
-                message: result.skippedCount > 0 ? "已跳过 \(result.skippedCount) 条重复或空记录" : "未找到可导入的记录"
+                title: "没有新增记录",
+                message: result.skippedCount > 0 ? "已跳过 \(result.skippedCount) 条重复、空白或无法解析的记录。可以选择其他文件继续导入。" : "请选择包含正文的 .md、.markdown 文件，或包含这些文件的文件夹、ZIP 压缩包。"
             )
         }
     }
@@ -620,7 +622,7 @@ struct HistoryView: View {
     private var loadingStateView: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text("加载中…")
+            Text("正在读取记录…")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -631,7 +633,7 @@ struct HistoryView: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "icloud.slash")
                 .font(.subheadline.weight(.semibold))
-            Text("iCloud 暂时不可用，正在显示本地数据")
+            Text("iCloud 暂不可用，当前显示本机记录。请检查系统设置中的 iCloud 云盘。")
                 .font(.footnote)
             Spacer(minLength: 0)
         }
@@ -645,11 +647,11 @@ struct HistoryView: View {
 
     private var emptyStateView: some View {
         ContentUnavailableView {
-            Label(historyManager.isUsingLocalFallback ? "暂无本地记录" : "还没有记录", systemImage: "rectangle.stack")
+            Label(historyManager.isUsingLocalFallback ? "本机还没有记录" : "还没有记录", systemImage: "rectangle.stack")
         } description: {
             Text(historyManager.isUsingLocalFallback
-                 ? "可以继续记录。iCloud 恢复后，云端记录会自动加载。"
-                 : "写下想法后，运行包含“保存记录”步骤的工作流，即可在这里回顾。")
+                 ? "可以先在本机记录。要查看 iCloud 中的记录，请确认已登录 Apple 账户并开启 iCloud 云盘，再返回此页。"
+                 : "草稿与已保存的记录分开存放。写好后，运行含“保存记录”步骤的工作流，就能在这里回顾。")
         } actions: {
             Button("开始记录") { dismiss() }.buttonStyle(.borderedProminent)
             Button("从文件导入", systemImage: "square.and.arrow.down") { showImportPicker = true }
@@ -662,9 +664,9 @@ struct HistoryView: View {
         ContentUnavailableView {
             Label("没有匹配的记录", systemImage: "line.3.horizontal.decrease.circle")
         } description: {
-            Text("试试减少筛选条件。")
+            Text("当前标签组合下没有记录。减少筛选条件，或清除标签筛选查看其他记录。")
         } actions: {
-            Button("清除筛选") { selectedTags = [] }.buttonStyle(.bordered)
+            Button("清除标签筛选") { selectedTags = [] }.buttonStyle(.bordered)
         }
     }
 
@@ -672,7 +674,7 @@ struct HistoryView: View {
         ContentUnavailableView {
             Label("没有搜索结果", systemImage: "magnifyingglass")
         } description: {
-            Text("没有找到“\(effectiveSearchText)”的相关记录。试试其他关键词或清除筛选。")
+            Text("试试更短的关键词。用空格分隔时，只显示同时匹配所有关键词的记录。")
         } actions: {
             Button("清除搜索与筛选") {
                 searchText = ""
@@ -896,17 +898,17 @@ struct HistoryRowView: View {
         .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
         .listRowBackground(isSelected ? Design.primaryColor.opacity(0.10) : Color(.systemBackground))
         .alert("删除这条记录？", isPresented: $showDeleteConfirmation) {
-            Button("取消", role: .cancel) { }
+            Button("保留记录", role: .cancel) { }
             Button("删除记录", role: .destructive, action: onDelete)
         } message: {
-            Text("删除后不可恢复。")
+            Text("这条记录将被永久删除，无法撤销。使用 iCloud 时，删除也会同步到其他设备。")
         }
     }
 
     private var recordContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             if item.isDownloading && item.text.isEmpty {
-                Label("正在从 iCloud 下载", systemImage: "icloud.and.arrow.down")
+                Label("正在从 iCloud 下载记录…", systemImage: "icloud.and.arrow.down")
                     .foregroundStyle(.secondary)
             } else {
                 Text(highlightedText(isExpanded ? item.text : item.preview))
@@ -918,7 +920,7 @@ struct HistoryRowView: View {
             HStack(spacing: 8) {
                 Text(item.formattedDate)
                     .accessibilityLabel(item.createdAt.formatted(date: .complete, time: .shortened))
-                if item.isDownloading { ProgressView().accessibilityLabel("正在下载") }
+                if item.isDownloading { ProgressView().accessibilityLabel("正在下载这条记录") }
                 if isCopied { Label("已复制", systemImage: "checkmark") }
             }
             .font(.caption)
@@ -1193,7 +1195,7 @@ struct CalendarGridView: View {
         VStack(spacing: 0) {
             let dates = daysInMonth.compactMap { $0 }.filter { count(for: $0) > 0 }
             if dates.isEmpty {
-                Text("本月还没有记录").foregroundStyle(.secondary).padding()
+                Text("本月还没有记录。可以切换月份，或查看全部日期。").foregroundStyle(.secondary).padding()
             }
             ForEach(dates, id: \.self) { date in
                 Button { select(date) } label: {

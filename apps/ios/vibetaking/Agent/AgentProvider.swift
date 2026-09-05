@@ -180,9 +180,9 @@ nonisolated enum LLMError: LocalizedError {
         switch self {
         case .providerError(let message): return message
         case .transientError(let message): return message
-        case .networkError(let underlying): return "网络错误：\(underlying.localizedDescription)"
-        case .invalidResponse(let message): return "服务返回异常：\(message)"
-        case .missingCredentials: return "请先在设置中填写 AI 密钥"
+        case .networkError(let underlying): return underlying.userFacingDescription
+        case .invalidResponse(let message): return message
+        case .missingCredentials: return UserFacingError.missingAICredentials
         }
     }
 

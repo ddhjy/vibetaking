@@ -212,8 +212,8 @@ struct SettingsView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("API Key").font(.subheadline).foregroundStyle(.secondary)
-                        SecureField("输入 API Key", text: Binding(
+                        Text("AI 密钥（API Key）").font(.subheadline).foregroundStyle(.secondary)
+                        SecureField("粘贴服务商提供的密钥", text: Binding(
                             get: { settingsManager.aiApiToken ?? "" },
                             set: { settingsManager.aiApiToken = $0.isEmpty ? nil : $0 }
                         ))
@@ -222,13 +222,13 @@ struct SettingsView: View {
                         .keyboardType(.asciiCapable)
                         .submitLabel(.done)
                         .privacySensitive()
-                        .accessibilityLabel("API Key")
+                        .accessibilityLabel("AI 密钥，API Key")
                     }
                     .padding(.vertical, 4)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("API 地址").font(.subheadline).foregroundStyle(.secondary)
-                        TextField("https://…/v1", text: Binding(
+                        Text("AI 服务地址").font(.subheadline).foregroundStyle(.secondary)
+                        TextField("例如：https://api.example.com/v1", text: Binding(
                             get: { settingsManager.aiBaseURLString },
                             set: { settingsManager.aiBaseURLString = $0 }
                         ))
@@ -236,7 +236,7 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
                         .submitLabel(.done)
-                        .accessibilityLabel("API 地址")
+                        .accessibilityLabel("AI 服务地址")
                     }
                     .padding(.vertical, 4)
 
@@ -250,19 +250,19 @@ struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("AI 配置")
+                    Text("连接 AI 服务")
                 } footer: {
-                    Text("密钥已加密存储在本机。")
+                    Text("AI 功能需要服务商提供的密钥。密钥存入本机钥匙串；使用 AI 时，相关文本会发送到你设置的服务。普通记录无需配置 AI。设置随修改保存。")
                 }
 
                 Section {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("模型名称").font(.subheadline).foregroundStyle(.secondary)
-                            TextField("输入模型 ID", text: selectedModelBinding)
+                            Text("模型 ID").font(.subheadline).foregroundStyle(.secondary)
+                            TextField("例如：gpt-5.5", text: selectedModelBinding)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .submitLabel(.done)
-                                .accessibilityLabel("模型名称")
+                                .accessibilityLabel("模型 ID")
                         }
                         .padding(.vertical, 4)
                     if !models.isEmpty {
@@ -282,7 +282,7 @@ struct SettingsView: View {
                     if isLoadingModels {
                         HStack(spacing: 12) {
                             ProgressView()
-                            Text("正在获取…")
+                            Text("正在获取可用模型…")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -293,7 +293,7 @@ struct SettingsView: View {
                             await loadModels()
                         }
                     } label: {
-                        Label(models.isEmpty ? "获取可用模型" : "刷新列表", systemImage: "arrow.clockwise")
+                        Label(models.isEmpty ? "获取可用模型" : "刷新模型列表", systemImage: "arrow.clockwise")
                     }
                     .disabled(!hasToken || isLoadingModels)
 
@@ -305,17 +305,17 @@ struct SettingsView: View {
                 } header: {
                     Text("模型")
                 } footer: {
-                    Text(hasToken ? "可输入模型名称，或获取网关提供的模型列表。" : "先填写 API Key，即可获取可用模型。")
+                    Text(hasToken ? "填写服务商提供的模型 ID，或从可用模型中选择。刷新列表不会更改当前模型。" : "填写 AI 密钥后可获取模型列表，也可以直接输入模型 ID。")
                 }
 
                 Section {
-                    Toggle("跨会话记忆", isOn: Bindable(memoryStore).isEnabled)
+                    Toggle("记住对话中的偏好", isOn: Bindable(memoryStore).isEnabled)
 
                     NavigationLink {
                         AgentSkillsSettingsView()
                     } label: {
                         HStack {
-                            Text("技能")
+                            Text("助手技能")
                             Spacer()
                             Text("\(skillStore.skills.count)")
                                 .foregroundStyle(.secondary)
@@ -328,7 +328,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI 助手")
                 } footer: {
-                    Text("记忆和技能通过 iCloud 同步。")
+                    Text("开启记忆后，助手可在后续对话中使用记下的偏好。技能用于保存可复用的任务指引。iCloud 可用时，记忆和技能文件随记录同步。")
                 }
 
                 Section {
@@ -356,7 +356,7 @@ struct SettingsView: View {
                 } header: {
                     Text("配置迁移")
                 } footer: {
-                    Text("导出文件包含密钥，请妥善保管。导入会覆盖现有配置。")
+                    Text("导出包含 AI 设置、全部工作流和可直接读取的密钥，仅存放或传给你信任的设备。导入会替换这些设置，记录不受影响。")
                 }
 
                 if shouldShowDemoModeSection {
@@ -388,7 +388,7 @@ struct SettingsView: View {
             .scrollDismissesKeyboard(.interactively)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }.fontWeight(.semibold)
+                    Button("关闭设置") { dismiss() }.fontWeight(.semibold)
                 }
             }
             .confirmationDialog("替换当前配置？", isPresented: $confirmConfigurationImport, titleVisibility: .visible) {
@@ -397,9 +397,9 @@ struct SettingsView: View {
                     pendingConfigurationURLs = []
                     importConfiguration(from: urls)
                 }
-                Button("取消", role: .cancel) { pendingConfigurationURLs = [] }
+                Button("保留当前配置", role: .cancel) { pendingConfigurationURLs = [] }
             } message: {
-                Text("导入文件将替换当前的 AI 设置和全部工作流。记录内容不受影响。")
+                Text("当前 AI 密钥、服务地址、模型和全部工作流将被替换。此操作无法撤销，记录不受影响。")
             }
             .sheet(isPresented: Binding(
                 get: { exportedConfigurationURL != nil },
@@ -420,7 +420,7 @@ struct SettingsView: View {
                 Alert(
                     title: Text(alert.title),
                     message: Text(alert.message),
-                    dismissButton: .default(Text("好"))
+                    dismissButton: .default(Text("返回设置"))
                 )
             }
             .onChange(of: settingsManager.aiApiToken ?? "") { _, _ in
@@ -468,8 +468,8 @@ struct SettingsView: View {
             } catch {
                 isExportingConfiguration = false
                 configurationTransferAlert = ConfigurationTransferAlert(
-                    title: "导出失败",
-                    message: error.localizedDescription
+                    title: "配置未能导出",
+                    message: error.userFacingDescription
                 )
             }
         }
@@ -483,8 +483,8 @@ struct SettingsView: View {
             confirmConfigurationImport = true
         case .failure(let error):
             configurationTransferAlert = ConfigurationTransferAlert(
-                title: "导入失败",
-                message: error.localizedDescription
+                title: "配置未能导入",
+                message: error.userFacingDescription
             )
         }
     }
@@ -499,14 +499,14 @@ struct SettingsView: View {
                 modelLoadError = nil
                 isImportingConfiguration = false
                 configurationTransferAlert = ConfigurationTransferAlert(
-                    title: "导入完成",
-                    message: "已替换 AI 与工作流配置"
+                    title: "配置已导入",
+                    message: "AI 设置和全部工作流已替换，现在即可使用。"
                 )
             } catch {
                 isImportingConfiguration = false
                 configurationTransferAlert = ConfigurationTransferAlert(
-                    title: "导入失败",
-                    message: error.localizedDescription
+                    title: "配置未能导入",
+                    message: error.userFacingDescription
                 )
             }
         }
@@ -519,7 +519,7 @@ struct SettingsView: View {
     private func loadModels() async {
         guard hasToken else {
             models = []
-            modelLoadError = "请先填写 API Key"
+            modelLoadError = "填写上方的 AI 密钥后，再获取模型列表。"
             return
         }
 
@@ -541,7 +541,7 @@ struct SettingsView: View {
 
             guard !textModels.isEmpty else {
                 models = []
-                modelLoadError = "暂无可用模型"
+                modelLoadError = "服务没有返回可用的文本模型。可直接填写服务商提供的模型 ID，或检查 AI 服务地址。"
                 return
             }
 
@@ -573,9 +573,9 @@ struct AgentSkillsSettingsView: View {
         List {
             if store.skills.isEmpty {
                 ContentUnavailableView {
-                    Label("还没有技能", systemImage: "sparkles")
+                    Label("还没有助手技能", systemImage: "sparkles")
                 } description: {
-                    Text("在“文件”App 的记录目录下创建 _skills 文件夹并添加技能文件，然后刷新列表。")
+                    Text("技能让助手复用任务指引。在记录目录中按“_skills/技能名/SKILL.md”存放文件，再刷新技能列表。")
                 }
                 .listRowBackground(Color.clear)
             } else {
@@ -604,11 +604,11 @@ struct AgentSkillsSettingsView: View {
                 }
             }
         }
-        .navigationTitle("技能")
+        .navigationTitle("助手技能")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("刷新", systemImage: "arrow.clockwise") {
+                Button("刷新技能列表", systemImage: "arrow.clockwise") {
                     store.reload()
                 }
             }

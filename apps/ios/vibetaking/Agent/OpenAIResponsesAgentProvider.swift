@@ -230,9 +230,9 @@ nonisolated final class OpenAIResponsesAgentProvider: AgentProvider {
                             let message = (err?["message"] as? String) ?? "response.failed with no error detail"
                             logger.error("response.failed — code: \(code), message: \(message)")
                             if code == "server_error" || code == "rate_limit_exceeded" {
-                                throw LLMError.transientError(message: "[\(code)] \(message)")
+                                throw LLMError.transientError(message: UserFacingError.aiStream(code: code))
                             }
-                            throw LLMError.providerError(message: "[\(code)] \(message)")
+                            throw LLMError.providerError(message: UserFacingError.aiStream(code: code))
 
                         case "response.incomplete":
                             // Server ended the response early; partial output
@@ -241,10 +241,9 @@ nonisolated final class OpenAIResponsesAgentProvider: AgentProvider {
                             let reason = ((response?["incomplete_details"] as? [String: Any])?["reason"] as? String) ?? "unknown"
                             logger.error("response.incomplete — reason: \(reason)")
                             throw LLMError.providerError(
-                                message: "Response ended incomplete (reason: \(reason))"
-                                    + (reason == "max_output_tokens"
-                                       ? " — output hit max_output_tokens; raise the limit or shorten the request."
-                                       : ""))
+                                message: reason == "max_output_tokens"
+                                    ? "回复达到长度上限，尚未完成。请缩小任务范围，或在会话中发送“继续”。"
+                                    : "这次回复提前中断。请稍后再试，或在会话中发送消息让助手继续。")
 
                         case "response.completed":
                             let response = event["response"] as? [String: Any]
@@ -342,7 +341,7 @@ nonisolated final class OpenAIResponsesAgentProvider: AgentProvider {
     private func streamRaw(body: [String: Any]) async throws -> AsyncThrowingStream<String, Error> {
         guard !apiKey.isEmpty else { throw LLMError.missingCredentials }
         guard let url = URL(string: "\(baseURLString)/responses") else {
-            throw LLMError.invalidResponse(message: "AI 服务地址异常")
+            throw LLMError.invalidResponse(message: UserFacingError.invalidAIAddress)
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -379,17 +378,7 @@ nonisolated final class OpenAIResponsesAgentProvider: AgentProvider {
     // MARK: - Error Mapping
 
     static func mapHTTPError(statusCode: Int, body: String) -> LLMError {
-        var message = "HTTP \(statusCode)"
-        if let data = body.data(using: .utf8),
-           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let err = dict["error"] as? [String: Any], let msg = err["message"] as? String {
-                message = "HTTP \(statusCode)：\(msg)"
-            } else if let msg = dict["message"] as? String {
-                message = "HTTP \(statusCode)：\(msg)"
-            }
-        } else if !body.isEmpty {
-            message = "HTTP \(statusCode)：\(String(body.prefix(180)))"
-        }
+        let message = UserFacingError.aiHTTP(statusCode: statusCode)
         if statusCode == 429 || (500...599).contains(statusCode) {
             return .transientError(message: message)
         }

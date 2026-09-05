@@ -32,6 +32,10 @@ struct ContentView: View {
     @State private var hasLaunched = false
     
     @State private var showWorkflowError = false
+    @State private var workflowErrorTitle = "工作流未完成"
+    @State private var workflowErrorContext = ""
+    @State private var statusMessage: String?
+    @State private var statusMessageTask: Task<Void, Never>?
     @State private var inputSessionResetToken = 0
     @State private var lastClearedTags: [String] = []
 
@@ -77,7 +81,7 @@ struct ContentView: View {
                 }
                 
                 ToolbarItem(id: AppToolbarIdentity.moreButton, placement: .topBarTrailing) {
-                    Menu {
+                    Menu("更多操作", systemImage: "ellipsis") {
                         Button {
                             isTextEditorFocused = false
                             showAgentChat = true
@@ -105,9 +109,8 @@ struct ContentView: View {
                         } label: {
                             Label("设置", systemImage: "gearshape")
                         }
-                    } label: {
-                        AppToolbarMoreLabel()
                     }
+                    .labelStyle(.iconOnly)
                     .accessibilityLabel("更多操作")
                     .accessibilityFocused($accessibilityFocus, equals: .more)
                     .id(AppToolbarIdentity.moreButton)
@@ -146,10 +149,15 @@ struct ContentView: View {
             )) { request in
                 OffloadPermissionDialog(request: request)
             }
-            .alert("处理未完成", isPresented: $showWorkflowError) {
-                Button("知道了") { workflowError = nil }
+            .alert(workflowErrorTitle, isPresented: $showWorkflowError) {
+                if workflowError is AIServiceError || workflowError is LLMError {
+                    Button("检查 AI 设置") { showSettings = true }
+                }
+                Button("检查工作流") { showWorkflowConfig = true }
+                Button("继续记录", role: .cancel) { workflowError = nil }
             } message: {
-                Text(workflowError?.userFacingDescription ?? "检查网络后再试一次")
+                Text([workflowError?.userFacingDescription ?? "请检查工作流设置后再试一次。", workflowErrorContext]
+                    .filter { !$0.isEmpty }.joined(separator: "\n\n"))
             }
 
         }
@@ -192,6 +200,8 @@ struct ContentView: View {
         }
         .onDisappear {
             keyboardTask?.cancel()
+            statusMessageTask?.cancel()
+            statusMessage = nil
             UIApplication.shared.isIdleTimerDisabled = false
         }
         .onChange(of: isTextEditorFocused) { _, isFocused in
@@ -216,76 +226,104 @@ struct ContentView: View {
     }
 
     private var bottomToolbar: some View {
-        HStack(spacing: 8) {
-            if isFocusMode, let workflow = focusedWorkflow {
-                workflowButton(for: workflow)
-                    .frame(maxWidth: .infinity)
-                    .controlSurface(emphasized: true)
-
-                Button("退出专注", systemImage: "viewfinder") {
-                    exitFocusMode()
-                }
-                .labelStyle(.iconOnly)
-                .font(Design.controlFont)
-                .frame(width: 44, height: 44)
-                .controlSurface()
-                .accessibilityHint("显示导航和其他工作流")
-            } else {
-                if dynamicTypeSize.isAccessibilitySize {
-                    Menu {
-                        ForEach(workflowManager.openWorkflows) { workflow in
-                            Button(workflow.name, systemImage: workflow.icon) { handleWorkflowTap(workflow) }
-                        }
-                        Divider()
-                        Button("工作流设置", systemImage: "slider.horizontal.3") { showWorkflowConfig = true }
-                    } label: {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(Design.controlFont)
-                            .frame(width: 44, height: 44)
-                    }
-                    .controlSurface()
-                    .accessibilityLabel("选择工作流")
-                    Spacer(minLength: 0)
-                } else {
-                    ViewThatFits(in: .horizontal) {
-                        workflowToolbarButtons
-                        ScrollView(.horizontal) {
-                            workflowToolbarButtons
-                        }
-                        .scrollIndicators(.hidden)
-                    }
+        VStack(spacing: 8) {
+            if let workflowID = visibleLoadingWorkflowId,
+               let workflow = workflowManager.workflows.first(where: { $0.id == workflowID }) {
+                Text("正在运行“\(workflow.name)”：第 \(workflowManager.currentNodeIndex + 1) 步，共 \(workflow.nodes.filter(\.isEnabled).count) 步")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    // Keep the glass outside the scroll view so its shadow isn't clipped into a rectangle.
-                    .controlSurface()
-                }
-                tagButton
+                    .padding(.horizontal, 20)
+            } else if let statusMessage {
+                Text(statusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20)
+            }
+            HStack(spacing: 8) {
+                if isFocusMode, let workflow = focusedWorkflow {
+                    workflowButton(for: workflow)
+                        .frame(maxWidth: .infinity)
+                        .controlSurface(emphasized: true)
 
-                Button("搜索记录", systemImage: "magnifyingglass", action: searchDraftInHistory)
+                    Button("退出专注", systemImage: "viewfinder") {
+                        exitFocusMode()
+                    }
                     .labelStyle(.iconOnly)
                     .font(Design.controlFont)
                     .frame(width: 44, height: 44)
                     .controlSurface()
-                    .disabled(processingWorkflowId != nil)
-            }
+                    .accessibilityHint("显示导航和其他工作流")
+                } else {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        Menu {
+                            ForEach(workflowManager.openWorkflows) { workflow in
+                                Button(workflow.name, systemImage: workflow.icon) { handleWorkflowTap(workflow) }
+                            }
+                            Divider()
+                            Button("工作流设置", systemImage: "slider.horizontal.3") { showWorkflowConfig = true }
+                        } label: {
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(Design.controlFont)
+                                .frame(width: 44, height: 44)
+                        }
+                        .controlSurface()
+                        .accessibilityLabel("选择工作流")
+                        Spacer(minLength: 0)
+                    } else {
+                        workflowToolbar
+                    }
+                    tagButton
 
-            clearDraftButton
+                    Button("搜索记录", systemImage: "magnifyingglass", action: searchDraftInHistory)
+                        .labelStyle(.iconOnly)
+                        .font(Design.controlFont)
+                        .frame(width: 44, height: 44)
+                        .controlSurface()
+                        .disabled(processingWorkflowId != nil)
+                }
+
+                clearDraftButton
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+            .animation(focusTransition, value: isFocusMode)
+            .sensoryFeedback(.impact(weight: .medium), trigger: isFocusMode)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.primary)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-        .animation(focusTransition, value: isFocusMode)
-        .sensoryFeedback(.impact(weight: .medium), trigger: isFocusMode)
     }
 
-    private var workflowToolbarButtons: some View {
-        HStack(spacing: 4) {
-            workflowSettingsButton
-            ForEach(workflowManager.openWorkflows) { workflow in
-                workflowButton(for: workflow)
+    private var workflowToolbar: some View {
+        GeometryReader { geometry in
+            let buttonWidth = Design.minimumTarget
+            let spacing: CGFloat = 4
+            let inset: CGFloat = 4
+            let buttonCount = workflowManager.openWorkflows.count + 1
+            let capacity = max(1, Int((geometry.size.width - 2 * inset + spacing) / (buttonWidth + spacing)))
+            let visibleCount = min(buttonCount, capacity)
+            // An integral number of buttons makes both edges align, including at the end of the list.
+            let width = CGFloat(visibleCount) * (buttonWidth + spacing) - spacing + 2 * inset
+
+            ScrollView(.horizontal) {
+                HStack(spacing: spacing) {
+                    workflowSettingsButton
+                    ForEach(workflowManager.openWorkflows) { workflow in
+                        workflowButton(for: workflow)
+                    }
+                }
+                .scrollTargetLayout()
             }
+            .contentMargins(.horizontal, inset, for: .scrollContent)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .scrollIndicators(.hidden)
+            .frame(width: width, height: buttonWidth)
+            // Keep the glass outside the scroll view so its shadow isn't clipped into a rectangle.
+            .controlSurface()
         }
-        .padding(.horizontal, 4)
+        .frame(height: Design.minimumTarget)
     }
 
     private var canRestoreDraft: Bool {
@@ -335,7 +373,7 @@ struct ContentView: View {
         Button { showWorkflowConfig = true } label: {
             Image(systemName: "slider.horizontal.3")
                 .font(Design.controlFont)
-                .frame(width: 44, height: 44)
+                .frame(width: Design.minimumTarget, height: Design.minimumTarget)
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("工作流设置")
@@ -364,7 +402,7 @@ struct ContentView: View {
             .foregroundStyle(focused ? Color.white : Color.primary)
             .tint(focused ? Color.white : Design.primaryColor)
             .padding(.horizontal, focused ? 16 : 0)
-            .frame(width: focused ? nil : 44, height: focused ? 48 : 44)
+            .frame(width: focused ? nil : Design.minimumTarget, height: focused ? 48 : Design.minimumTarget)
             .frame(maxWidth: focused ? .infinity : nil)
             .contentShape(Capsule())
         }
@@ -378,8 +416,8 @@ struct ContentView: View {
             }
         )
         .accessibilityLabel(workflow.name)
-        .accessibilityValue(visibleLoadingWorkflowId == workflow.id ? "正在处理" : (focused ? "专注模式" : ""))
-        .accessibilityHint(focused ? "执行此工作流；可用退出专注按钮返回" : "执行此工作流；更多菜单中可进入专注模式")
+        .accessibilityValue(visibleLoadingWorkflowId == workflow.id ? "正在运行工作流" : (focused ? "专注模式" : ""))
+        .accessibilityHint(workflowActionHint(for: workflow))
         .accessibilityAction(named: focused ? "退出专注模式" : "进入专注模式") {
             if focused { exitFocusMode() } else { enterFocusMode(workflow) }
         }
@@ -415,6 +453,39 @@ struct ContentView: View {
             }
             .frame(maxWidth: Design.readingWidth, maxHeight: .infinity)
             .frame(maxWidth: .infinity)
+
+            if draftText.isEmpty && historyManager.savedItems.isEmpty && !isFocusMode {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("草稿随输入保存。要在记录列表中回顾，请运行含“保存记录”步骤的工作流。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("设置保存步骤") { showWorkflowConfig = true }
+                        .font(.subheadline)
+                        .frame(minHeight: 44)
+                }
+                .padding(.horizontal, 20)
+                .frame(maxWidth: Design.readingWidth, alignment: .leading)
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func workflowActionHint(for workflow: Workflow) -> String {
+        if draftText.isEmpty && workflow.nodes.contains(where: { $0.isEnabled && $0.type == .httpPost }) {
+            return "草稿为空，将向接收端发送回车指令"
+        }
+        return "按顺序处理当前草稿，开始运行时清空输入框，可继续写下一条"
+    }
+
+    private func showStatus(_ message: String) {
+        statusMessageTask?.cancel()
+        statusMessage = message
+        UIAccessibility.post(notification: .announcement, argument: message)
+        statusMessageTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            statusMessage = nil
         }
     }
     
@@ -487,7 +558,7 @@ struct ContentView: View {
             interruptDraftInputSession()
             historyManager.clearDraft()
         }
-        UIAccessibility.post(notification: .announcement, argument: announcement)
+        showStatus(announcement)
     }
 
     private func enterFocusMode(_ workflow: Workflow, fromLongPress: Bool = false) {
@@ -534,6 +605,8 @@ struct ContentView: View {
         }
 
         if let issue = workflow.configurationIssue {
+            workflowErrorTitle = "“\(workflow.name)”还未设置完成"
+            workflowErrorContext = ""
             workflowError = NSError(domain: "WorkflowManager", code: -4,
                                     userInfo: [NSLocalizedDescriptionKey: issue])
             showWorkflowError = true
@@ -564,9 +637,12 @@ struct ContentView: View {
 
     private func sendReturnKey(for workflow: Workflow) async -> Bool {
         do {
-            _ = try await workflowManager.sendReturnKey(workflowID: workflow.id)
+            let didSend = try await workflowManager.sendReturnKey(workflowID: workflow.id)
+            showStatus(didSend ? "已向接收端发送回车指令" : "先写下一段文字，再运行“\(workflow.name)”。")
             return true
         } catch {
+            workflowErrorTitle = "回车指令未能发送"
+            workflowErrorContext = "请先检查接收端，再决定是否重新发送。"
             workflowError = error
             showWorkflowError = true
             return false
@@ -607,13 +683,19 @@ struct ContentView: View {
                     historyManager.addRecord(result.finalText, tags: result.tags)
                 }
             }
+            showStatus(result.didCopyToClipboard ? "“\(workflow.name)”已完成，文本已复制到剪贴板。" : "“\(workflow.name)”已完成。")
             return true
         } catch {
+            workflowErrorTitle = "“\(workflow.name)”未完成"
             workflowError = error
-            showWorkflowError = true
             if draftText.isEmpty {
                 historyManager.restoreLastClearedDraft()
             }
+            workflowErrorContext = draftText == input ? "原文已恢复到输入框。" : ""
+            if workflowManager.currentNodeIndex > 0 {
+                workflowErrorContext += "前面的步骤可能已完成，请检查结果后再运行。"
+            }
+            showWorkflowError = true
             return false
         }
     }

@@ -70,7 +70,7 @@ class AgentEngine {
         thinkingLevel: ThinkingLevel = .off,
         onEvent: @escaping (AgentEngineEvent) -> Void
     ) async throws -> String {
-        guard !isRunning else { throw LLMError.providerError(message: "上一个任务还在运行") }
+        guard !isRunning else { throw LLMError.providerError(message: "助手还在处理上一条消息。请等待完成，或先停止处理。") }
         isRunning = true
         defer { isRunning = false }
 
@@ -108,7 +108,7 @@ class AgentEngine {
             // No tool calls → the model has finished its answer.
             guard turn.stopReason == .toolUse, !turn.toolEntries.isEmpty else {
                 if turn.stopReason == .refusal {
-                    throw LLMError.providerError(message: "模型安全层拒绝了本次请求，请调整措辞后重试")
+                    throw LLMError.providerError(message: "AI 服务无法协助这次请求。可以尝试其他记录整理任务。")
                 }
                 break
             }

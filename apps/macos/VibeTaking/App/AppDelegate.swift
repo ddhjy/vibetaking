@@ -13,15 +13,15 @@ private struct DraftHistoryEntry: Codable {
         var displayTitle: String {
             switch self {
             case .stoppedInput:
-                return "停止输入"
+                return "输入已停止"
             case .pastedDraft:
                 return "已粘贴"
             case .directPaste:
                 return "直接粘贴"
             case .remoteCleared:
-                return "草稿被清空"
+                return "清空前的草稿"
             case .replacedBeforeInput:
-                return "开始新输入"
+                return "替换前的草稿"
             }
         }
     }
@@ -89,15 +89,15 @@ private enum LaunchAtLoginError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .libraryDirectoryUnavailable:
-            return "无法定位当前用户的 LaunchAgents 目录。"
+            return "找不到登录启动项的保存位置。请重新打开随心记后再试。"
         case .bundlePathUnavailable:
-            return "无法获取当前应用路径，暂时不能设置开机启动。"
+            return "无法定位随心记。请将 App 放入“应用程序”文件夹，再开启登录时启动。"
         case .invalidConfiguration:
-            return "生成开机启动配置时失败，请稍后重试。"
-        case .writeFailed(let error):
-            return "写入开机启动配置失败：\(error.localizedDescription)"
-        case .removeFailed(let error):
-            return "移除开机启动配置失败：\(error.localizedDescription)"
+            return "未能创建登录启动项。请重新打开随心记后再试。"
+        case .writeFailed:
+            return "未能开启登录时启动。请检查磁盘空间和用户文件夹的写入权限后再试。"
+        case .removeFailed:
+            return "未能关闭登录时启动。请检查用户文件夹的写入权限后再试。"
         }
     }
 
@@ -196,7 +196,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(ipItem)
 
         portItem = makeMenuItem(
-            title: "端口：\(port)",
+            title: "接收端口：\(port)",
             action: #selector(changePort(_:)),
             symbolName: "number"
         )
@@ -425,29 +425,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func changePort(_ sender: NSMenuItem) {
         let alert = NSAlert()
-        alert.messageText = "修改监听端口"
-        alert.informativeText = "请输入新的端口号（1–65535）"
-        alert.addButton(withTitle: "更改")
+        alert.messageText = "更改接收端口"
+        alert.informativeText = "填写 1–65535 之间的端口。更改后，iPhone 上手动填写的发送端口也需要同步修改。"
+        alert.addButton(withTitle: "保存端口")
         alert.addButton(withTitle: "取消")
 
         let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
         inputField.stringValue = String(port)
+        inputField.setAccessibilityLabel("接收端口，1 到 65535")
         alert.accessoryView = inputField
         alert.window.initialFirstResponder = inputField
 
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return }
+        while true {
+            let response = alert.runModal()
+            guard response == .alertFirstButtonReturn else { return }
+            guard let newPort = UInt16(inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  newPort >= 1 else {
+                alert.messageText = "端口需要是 1–65535 之间的整数"
+                alert.informativeText = "当前端口未更改。请修改后保存，或取消返回。"
+                inputField.selectText(nil)
+                continue
+            }
+            guard newPort != port else { return }
 
-        guard let newPort = UInt16(inputField.stringValue), newPort >= 1 else { return }
-        guard newPort != port else { return }
+            port = newPort
+            portItem.title = "接收端口：\(port)"
+            refreshSettingsWindow()
 
-        port = newPort
-        portItem.title = "端口：\(port)"
-        refreshSettingsWindow()
-
-        if serverRunning {
-            stopServer()
-            startServer()
+            if serverRunning {
+                stopServer()
+                startServer()
+            }
+            return
         }
     }
 
@@ -561,14 +570,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let localizedError = error as? LocalizedError
 
         alert.alertStyle = .warning
-        alert.messageText = "无法更新开机启动"
+        alert.messageText = "登录时启动未能更改"
         alert.informativeText = localizedError?.errorDescription ?? error.localizedDescription
 
         if let recoverySuggestion = localizedError?.recoverySuggestion, !recoverySuggestion.isEmpty {
             alert.informativeText += "\n\n\(recoverySuggestion)"
         }
 
-        alert.addButton(withTitle: "知道了")
+        alert.addButton(withTitle: "返回设置")
         alert.runModal()
     }
 
@@ -658,7 +667,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func ipMenuTitle(copied: Bool = false) -> String {
         let lines = ipSummaryLines()
-        guard !lines.isEmpty else { return "未检测到局域网地址" }
+        guard !lines.isEmpty else { return "暂未获取地址，请连接 Wi-Fi 或有线网络" }
 
         if copied {
             if lines.count == 1 {
@@ -794,14 +803,14 @@ private final class SettingsViewController: NSViewController {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 520))
         preferredContentSize = NSSize(width: 520, height: 520)
 
-        let aboutButton = Self.makeActionButton(title: "关于")
+        let aboutButton = Self.makeActionButton(title: "关于随心记")
         aboutButton.target = self
         aboutButton.action = #selector(handleShowAbout)
 
         let titleLabel = NSTextField(labelWithString: "设置")
         titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
 
-        let subtitleLabel = NSTextField(labelWithString: "管理连接与系统权限")
+        let subtitleLabel = NSTextField(labelWithString: "接收 iPhone 发来的文本，并粘贴到当前输入框")
         subtitleLabel.font = .systemFont(ofSize: 12)
         subtitleLabel.textColor = .secondaryLabelColor
 
@@ -816,29 +825,29 @@ private final class SettingsViewController: NSViewController {
         headerRow.spacing = 12
         headerRow.translatesAutoresizingMaskIntoConstraints = false
 
-        let copyButton = Self.makeActionButton(title: "复制")
+        let copyButton = Self.makeActionButton(title: "复制地址")
         copyButton.target = self
         copyButton.action = #selector(handleCopyNetworkInfo)
 
-        let changePortButton = Self.makeActionButton(title: "修改")
+        let changePortButton = Self.makeActionButton(title: "更改端口")
         changePortButton.target = self
         changePortButton.action = #selector(handleChangePort)
 
         let networkCard = Self.makeCard(rows: [
             makeRow(title: "局域网地址", detail: ipValueLabel, accessory: copyButton),
-            makeRow(title: "监听端口", detail: portValueLabel, accessory: changePortButton)
+            makeRow(title: "接收端口", detail: portValueLabel, accessory: changePortButton)
         ])
 
         launchAtLoginSwitch.target = self
         launchAtLoginSwitch.action = #selector(handleLaunchAtLoginChanged)
 
-        let historyButton = Self.makeActionButton(title: "查看")
+        let historyButton = Self.makeActionButton(title: "查看记录")
         historyButton.target = self
         historyButton.action = #selector(handleShowHistory)
 
         let behaviorCard = Self.makeCard(rows: [
-            makeRow(title: "开机启动", detail: Self.makeHintLabel("登录 macOS 后自动启动随心记"), accessory: launchAtLoginSwitch),
-            makeRow(title: "历史记录", detail: Self.makeHintLabel("回顾已粘贴的文本"), accessory: historyButton)
+            makeRow(title: "登录时启动", detail: Self.makeHintLabel("登录 macOS 后自动启动随心记"), accessory: launchAtLoginSwitch),
+            makeRow(title: "历史记录", detail: Self.makeHintLabel("查看最近 100 条接收或暂存的文本"), accessory: historyButton)
         ])
 
         let accessibilityButton = Self.makeActionButton(title: "打开系统设置")
@@ -902,11 +911,11 @@ private final class SettingsViewController: NSViewController {
         launchAtLogin: Bool,
         accessibilityGranted: Bool
     ) {
-        ipValueLabel.stringValue = ipSummary.isEmpty ? "未检测到局域网地址" : ipSummary
+        ipValueLabel.stringValue = ipSummary.isEmpty ? "暂未获取地址，请连接 Wi-Fi 或有线网络" : ipSummary
         portValueLabel.stringValue = "\(port)"
         launchAtLoginSwitch.state = launchAtLogin ? .on : .off
 
-        accessibilityValueLabel.stringValue = accessibilityGranted ? "已授权" : "未授权"
+        accessibilityValueLabel.stringValue = accessibilityGranted ? "已允许，可自动粘贴" : "未允许，自动粘贴需要此权限"
         accessibilityValueLabel.textColor = accessibilityGranted ? .systemGreen : .systemOrange
     }
 
@@ -1044,10 +1053,10 @@ private final class DraftHistoryWindowController: NSWindowController {
 
 private final class DraftHistoryViewController: NSViewController {
     private let titleLabel = NSTextField(labelWithString: "历史记录")
-    private let hintLabel = NSTextField(labelWithString: "保留已粘贴或被替换的草稿，方便回溯。")
+    private let hintLabel = NSTextField(labelWithString: "保留最近 100 条接收或暂存的文本。可选中文字后复制。")
     private let textView = NSTextView(frame: .zero)
     private let scrollView = NSScrollView()
-    private let placeholderLabel = NSTextField(labelWithString: "暂无记录")
+    private let placeholderLabel = NSTextField(labelWithString: "还没有接收记录。请在 iPhone 工作流中选择这台 Mac，再发送一段文字。")
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 420))
@@ -1059,7 +1068,9 @@ private final class DraftHistoryViewController: NSViewController {
         hintLabel.maximumNumberOfLines = 2
 
         placeholderLabel.font = .systemFont(ofSize: 13)
-        placeholderLabel.textColor = .tertiaryLabelColor
+        placeholderLabel.textColor = .secondaryLabelColor
+        placeholderLabel.lineBreakMode = .byWordWrapping
+        placeholderLabel.maximumNumberOfLines = 0
 
         textView.isEditable = false
         textView.isSelectable = true

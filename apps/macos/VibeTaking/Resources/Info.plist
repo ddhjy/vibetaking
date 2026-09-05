@@ -29,7 +29,7 @@
         <string>_vibetaking._tcp</string>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>用于在局域网内发布粘贴服务，接收 iPhone 或其他设备发来的文本。</string>
+    <string>允许后，同一网络中的 iPhone 可发现这台 Mac，并把文本发送到随心记，用于在当前输入框中粘贴。</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>

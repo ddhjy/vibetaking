@@ -17,9 +17,9 @@ enum OffloadPermissionLevel: Int, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .bypass: return "直接允许"
-        case .askOnce: return "每段会话询问"
-        case .notAllowed: return "禁止"
+        case .bypass: return "始终允许"
+        case .askOnce: return "每次对话首次询问"
+        case .notAllowed: return "不允许"
         }
     }
 }
@@ -90,9 +90,9 @@ final class OffloadPermissionManager {
     static let shared = OffloadPermissionManager()
 
     static let allCommands: [OffloadCommandInfo] = [
-        .init(name: "apple-calendar", displayLabel: "日历", description: "读取与创建日程、查询忙闲"),
-        .init(name: "apple-reminders", displayLabel: "提醒事项", description: "读取与创建提醒、标记完成"),
-        .init(name: "apple-clipboard", displayLabel: "剪贴板", description: "读取与写入系统剪贴板"),
+        .init(name: "apple-calendar", displayLabel: "日历", description: "查看和创建日程、查询空闲时间"),
+        .init(name: "apple-reminders", displayLabel: "提醒事项", description: "查看和创建提醒事项、标记完成"),
+        .init(name: "apple-clipboard", displayLabel: "剪贴板", description: "读取文字和图片、写入文字或清空剪贴板"),
     ]
 
     var pendingRequest: PermissionRequest?
@@ -138,7 +138,7 @@ final class OffloadPermissionManager {
         case .notAllowed:
             logger.info("Permission denied (Not Allowed): \(command)")
             let label = Self.allCommands.first(where: { $0.name == command })?.displayLabel ?? command
-            return .denied("\(label)访问已禁用。如需允许，可前往设置 > AI 助手 > 设备权限修改。")
+            return .denied("AI 助手目前不能访问\(label)。可在随心记“设置 → AI 助手 → 设备权限”中更改。")
 
         case .askOnce:
             // Check session grant
@@ -184,7 +184,7 @@ final class OffloadPermissionManager {
                 return .allowed
             } else {
                 logger.info("Permission denied (Ask Once): \(command)")
-                return .denied("未获得\(displayLabel)访问授权，本次操作未执行。")
+                return .denied("未允许访问\(displayLabel)，这项设备操作未执行。可以让助手使用已有记录继续。")
             }
         }
     }
