@@ -49,7 +49,7 @@ struct OffloadPermissionDialog: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Text("允许后，这次对话再次访问\(request.displayLabel)时不再询问。不允许则跳过本次设备操作。")
+                    Text("允许后，这次对话内再访问\(request.displayLabel)时不再询问。如果不允许，这次操作会跳过。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -116,7 +116,7 @@ struct OffloadPermissionSettingsView: View {
                     .pickerStyle(.navigationLink)
                 }
             } footer: {
-                Text("“每次对话首次询问”会在新对话首次访问时征求同意；“始终允许”不再显示此确认；“不允许”会阻止访问。系统日历和提醒事项权限仍需单独开启。")
+                Text("新对话首次访问时会征求同意。选择“始终允许”可跳过确认，“不允许”则阻止访问。系统日历和提醒事项权限需在系统设置中单独开启。")
             }
         }
         .navigationTitle("设备权限")

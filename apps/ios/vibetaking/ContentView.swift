@@ -137,9 +137,11 @@ struct ContentView: View {
 
             .navigationDestination(isPresented: $showHistory) {
                 HistoryView(initialSearchText: historySearchText)
+                    .background { RootReturnButtonBehavior() }
             }
             .navigationDestination(isPresented: $showAgentChat) {
                 AgentChatView()
+                    .background { RootReturnButtonBehavior() }
             }
             .safeAreaInset(edge: .bottom) {
                 bottomToolbar
@@ -480,11 +482,11 @@ struct ContentView: View {
 
             if draftText.isEmpty && historyManager.savedItems.isEmpty && !isFocusMode {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("草稿随输入保存。要在记录列表中回顾，请运行含“保存记录”步骤的工作流。")
+                    Text("草稿随输入自动保存。添加“保存记录”步骤后，就能在记录列表中回顾。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("设置保存步骤") { showWorkflowConfig = true }
+                    Button("添加保存步骤") { showWorkflowConfig = true }
                         .font(.subheadline)
                         .frame(minHeight: 44)
                 }
@@ -499,7 +501,7 @@ struct ContentView: View {
         if draftText.isEmpty && workflow.nodes.contains(where: { $0.isEnabled && $0.type == .httpPost }) {
             return "草稿为空，将向接收端发送回车指令"
         }
-        return "按顺序处理当前草稿，开始运行时清空输入框，可继续写下一条"
+        return "运行后清空输入框，可继续写下一条"
     }
 
     private func showStatus(_ message: String) {
@@ -752,7 +754,7 @@ struct DraftTextView: UIViewRepresentable {
         textView.textColor = .label
         textView.tintColor = .systemIndigo
         textView.accessibilityLabel = "草稿内容"
-        textView.accessibilityHint = "实时保存草稿，使用工作流保存为记录"
+        textView.accessibilityHint = "内容随输入自动保存"
         textView.accessibilityIdentifier = "draft-editor"
         textView.text = text
         textView.isScrollEnabled = isScrollEnabled

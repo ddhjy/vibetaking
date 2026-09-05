@@ -16,7 +16,7 @@ enum WorkflowNodeType: String, Codable, CaseIterable {
     
     var displayName: String {
         switch self {
-        case .aiProcess: "AI 改写文本"
+        case .aiProcess: "AI 改写"
         case .agentProcess: "AI 助手"
         case .copyToClipboard: "复制文本"
         case .save: "保存记录"
@@ -456,7 +456,7 @@ class WorkflowManager {
             case .httpPost:
                 let target = await resolveHTTPNodeTarget(node.config)
                 guard let url = HTTPTargetURL.make(host: target.host, port: target.port) else {
-                    throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "发送地址无法使用。请在工作流的发送步骤中填写主机名或 IP 地址，以及 1–65535 之间的端口。"])
+                    throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "发送地址无法使用。请检查发送步骤中的主机地址和端口，确保与 Mac 端设置一致。"])
                 }
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
@@ -509,7 +509,7 @@ class WorkflowManager {
         for node in httpNodes {
             let target = await resolveHTTPNodeTarget(node.config)
             guard let url = HTTPTargetURL.make(host: target.host, port: target.port, path: "/send") else {
-                throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "发送地址无法使用。请在工作流的发送步骤中填写主机名或 IP 地址，以及 1–65535 之间的端口。"])
+                throw NSError(domain: "WorkflowManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "发送地址无法使用。请检查发送步骤中的主机地址和端口，确保与 Mac 端设置一致。"])
             }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"

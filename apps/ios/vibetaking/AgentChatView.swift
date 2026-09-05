@@ -308,7 +308,7 @@ struct AgentChatView: View {
                                 .id(block.id)
                         }
                         if viewModel.isRunning {
-                            ProgressView("助手正在处理，可随时停止…")
+                            ProgressView("助手正在处理，可随时停止")
                                 .font(.subheadline)
                         }
                         Color.clear.frame(height: 1).id("conversation-bottom")
@@ -412,8 +412,8 @@ struct AgentChatView: View {
             Label(hasAIKey ? "让助手帮你整理记录" : "连接 AI，开始整理记录", systemImage: "sparkles")
         } description: {
             Text(hasAIKey
-                 ? "查找想法、总结内容，或给记录加标签。选一个示例，修改后发送。相关记录会发送到你设置的 AI 服务。"
-                 : "填写服务商提供的 AI 密钥后，就能查找和整理记录。你仍可随时返回主页继续记录。")
+                 ? "查找想法、总结内容，或给记录加标签。选一个示例，修改后发送。"
+                 : "填写 AI 密钥后，助手就能帮你查找和整理记录。随时可以返回主页继续记录。")
         } actions: {
             VStack(spacing: 10) {
                 if !hasAIKey {

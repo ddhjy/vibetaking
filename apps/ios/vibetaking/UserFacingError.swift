@@ -43,7 +43,7 @@ nonisolated enum UserFacingError {
 
 extension Error {
     nonisolated var userFacingDescription: String {
-        if self is CancellationError { return "操作已取消。" }
+        if self is CancellationError { return "操作已取消" }
         let error = self as NSError
         if error.domain == NSCocoaErrorDomain {
             switch CocoaError.Code(rawValue: error.code) {
@@ -75,7 +75,7 @@ extension Error {
              .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid:
             return "无法建立安全连接。请核对服务地址；如果地址无误，请联系服务提供方。"
         case .cancelled:
-            return "操作已取消。"
+            return "操作已取消"
         default:
             return "暂时无法连接服务。请检查网络和服务地址后再试一次。"
         }

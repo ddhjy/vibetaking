@@ -368,7 +368,7 @@ struct WorkflowConfigView: View {
             Text("处理步骤")
         } footer: {
             if !workflow.nodes.isEmpty {
-                Text("启用的步骤从上到下执行。点按步骤修改配置，点按“调整顺序”排序。更改自动保存。")
+                Text("步骤从上到下依次执行，更改自动保存。")
             }
         }
 

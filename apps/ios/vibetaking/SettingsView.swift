@@ -252,7 +252,7 @@ struct SettingsView: View {
                 } header: {
                     Text("连接 AI 服务")
                 } footer: {
-                    Text("AI 功能需要服务商提供的密钥。密钥存入本机钥匙串；使用 AI 时，相关文本会发送到你设置的服务。普通记录无需配置 AI。设置随修改保存。")
+                    Text("密钥存入本机钥匙串，使用 AI 时相关文本会发送到你设置的服务。普通记录无需配置 AI。")
                 }
 
                 Section {
@@ -328,7 +328,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI 助手")
                 } footer: {
-                    Text("开启记忆后，助手可在后续对话中使用记下的偏好。技能用于保存可复用的任务指引。iCloud 可用时，记忆和技能文件随记录同步。")
+                    Text("开启后，助手会在后续对话中使用记下的偏好。技能可保存可复用的任务指引。iCloud 可用时随记录同步。")
                 }
 
                 Section {
