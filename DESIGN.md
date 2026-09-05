@@ -17,7 +17,7 @@
 ## 字体和尺寸
 
 - 正文使用 `.body`，说明使用 `.subheadline` / `.footnote`，日期等元数据使用 `.caption`。
-- 主页名称保留左对齐粗体，使用 `.title.bold()`（默认 28 pt），比系统大标题小一档，随 Dynamic Type 缩放；正文保持 `.body`（默认 17 pt）。
+- 主页名称使用已确认的宋体图片 `AppTitleWordmark`，左对齐、默认高 34 pt，随 Dynamic Type 缩放并限制在导航栏可用高度内；正文保持 `.body`（默认 17 pt）。原图保存在资源目录中，显示时裁去外围留白并用字形蒙版跟随 `.primary` 适配浅深色，读屏名称保留“随心记”和标题语义。
 - UIKit 编辑器使用 `UIFont.preferredFont(forTextStyle: .body)` 和 Dynamic Type。
 - 主页标题下方为整个输入区域增加 12 pt 留白，占位文字与光标同步下移；隐藏标题的专注模式不增加这段留白。
 - 自定义操作热区至少 44 × 44 pt；图标选择单元随字体缩放。

@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var titleWordmarkHeight: CGFloat = 34
     @AccessibilityFocusState private var accessibilityFocus: SheetTrigger?
     private enum SheetTrigger: Hashable { case more, tags, workflows }
 
@@ -82,16 +83,13 @@ struct ContentView: View {
                         // Draw the page title in the navigation bar's visual band,
                         // without making it a navigation item or reserving another row.
                         let navigationHeight = max(0, contentGeometry.frame(in: .global).minY - topEdge)
-                        Text("随心记")
-                            .font(.title.bold())
-                            .foregroundStyle(.primary)
+                        AppTitleWordmark(height: min(titleWordmarkHeight, max(0, navigationHeight - 12)))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.leading, 20)
                             .padding(.trailing, 80)
                             // The native toolbar reserves 12 pt below its controls.
                             .frame(height: max(0, navigationHeight - 12))
                             .offset(y: -navigationHeight)
-                            .accessibilityAddTraits(.isHeader)
                     }
                     .allowsHitTesting(false)
                 }
