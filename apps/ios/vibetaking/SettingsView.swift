@@ -159,6 +159,10 @@ class SettingsManager {
 }
 
 struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var pendingConfigurationURLs: [URL] = []
+    @State private var confirmConfigurationImport = false
+
     @State private var settingsManager = SettingsManager.shared
     @State private var demoMode = DemoModeManager.shared
     @State private var versionTapCount = 0
@@ -168,6 +172,8 @@ struct SettingsView: View {
     @State private var models: [AIModel] = []
     @State private var isLoadingModels = false
     @State private var modelLoadError: String?
+    @State private var modelLoadTask: Task<Void, Never>?
+    @State private var modelRequestID = UUID()
     @State private var isExportingConfiguration = false
     @State private var isImportingConfiguration = false
     @State private var showConfigurationImportPicker = false
@@ -205,18 +211,34 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 Section {
-                    SecureField("API Key", text: Binding(
-                        get: { settingsManager.aiApiToken ?? "" },
-                        set: { settingsManager.aiApiToken = $0.isEmpty ? nil : $0 }
-                    ))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("API Key").font(.subheadline).foregroundStyle(.secondary)
+                        SecureField("输入 API Key", text: Binding(
+                            get: { settingsManager.aiApiToken ?? "" },
+                            set: { settingsManager.aiApiToken = $0.isEmpty ? nil : $0 }
+                        ))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.asciiCapable)
+                        .submitLabel(.done)
+                        .privacySensitive()
+                        .accessibilityLabel("API Key")
+                    }
+                    .padding(.vertical, 4)
 
-                    TextField("API 前缀", text: Binding(
-                        get: { settingsManager.aiBaseURLString },
-                        set: { settingsManager.aiBaseURLString = $0 }
-                    ))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("API 地址").font(.subheadline).foregroundStyle(.secondary)
+                        TextField("https://…/v1", text: Binding(
+                            get: { settingsManager.aiBaseURLString },
+                            set: { settingsManager.aiBaseURLString = $0 }
+                        ))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .submitLabel(.done)
+                        .accessibilityLabel("API 地址")
+                    }
+                    .padding(.vertical, 4)
 
                     if normalizedBaseURLString != SettingsManager.defaultAIBaseURLString {
                         Button {
@@ -234,20 +256,27 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    if models.isEmpty {
-                        HStack {
-                            Text("当前模型")
-                            Spacer()
-                            Text(settingsManager.aiModelID)
-                                .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("模型名称").font(.subheadline).foregroundStyle(.secondary)
+                            TextField("输入模型 ID", text: selectedModelBinding)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .submitLabel(.done)
+                                .accessibilityLabel("模型名称")
                         }
-                    } else {
-                        Picker("模型", selection: selectedModelBinding) {
+                        .padding(.vertical, 4)
+                    if !models.isEmpty {
+                        Picker("可用模型", selection: selectedModelBinding) {
+                            if !models.contains(where: { $0.id == settingsManager.aiModelID }) {
+                                Text("\(settingsManager.aiModelID)（当前）")
+                                    .tag(settingsManager.aiModelID)
+                            }
                             ForEach(models) { model in
                                 Text(modelLabel(for: model))
                                     .tag(model.id)
                             }
                         }
+                        .pickerStyle(.navigationLink)
                     }
 
                     if isLoadingModels {
@@ -259,7 +288,8 @@ struct SettingsView: View {
                     }
 
                     Button {
-                        Task {
+                        modelLoadTask?.cancel()
+                        modelLoadTask = Task {
                             await loadModels()
                         }
                     } label: {
@@ -268,14 +298,14 @@ struct SettingsView: View {
                     .disabled(!hasToken || isLoadingModels)
 
                     if let modelLoadError {
-                        Text(modelLoadError)
+                        Label(modelLoadError, systemImage: "exclamationmark.circle")
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(.primary)
                     }
                 } header: {
                     Text("模型")
                 } footer: {
-                    Text("需要换模型时再刷新列表。")
+                    Text(hasToken ? "可输入模型名称，或获取网关提供的模型列表。" : "先填写 API Key，即可获取可用模型。")
                 }
 
                 Section {
@@ -285,7 +315,7 @@ struct SettingsView: View {
                         AgentSkillsSettingsView()
                     } label: {
                         HStack {
-                            Text("Skills")
+                            Text("技能")
                             Spacer()
                             Text("\(skillStore.skills.count)")
                                 .foregroundStyle(.secondary)
@@ -298,7 +328,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI 助手")
                 } footer: {
-                    Text("记忆和 Skills 通过 iCloud 同步。")
+                    Text("记忆和技能通过 iCloud 同步。")
                 }
 
                 Section {
@@ -343,20 +373,34 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    HStack {
-                        Text("版本")
-                        Spacer()
-                        Text(appVersionLabel)
-                            .foregroundStyle(.secondary)
+                    Button(action: handleVersionTap) {
+                        LabeledContent("版本", value: appVersionLabel)
+                            .foregroundStyle(.primary)
+                            .frame(minHeight: 44)
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        handleVersionTap()
-                    }
+                    .buttonStyle(.plain)
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("设置")
+            .task { skillStore.loadIfNeeded() }
             .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }.fontWeight(.semibold)
+                }
+            }
+            .confirmationDialog("替换当前配置？", isPresented: $confirmConfigurationImport, titleVisibility: .visible) {
+                Button("替换配置", role: .destructive) {
+                    let urls = pendingConfigurationURLs
+                    pendingConfigurationURLs = []
+                    importConfiguration(from: urls)
+                }
+                Button("取消", role: .cancel) { pendingConfigurationURLs = [] }
+            } message: {
+                Text("导入文件将替换当前的 AI 设置和全部工作流。记录内容不受影响。")
+            }
             .sheet(isPresented: Binding(
                 get: { exportedConfigurationURL != nil },
                 set: { if !$0 { exportedConfigurationURL = nil } }
@@ -380,12 +424,10 @@ struct SettingsView: View {
                 )
             }
             .onChange(of: settingsManager.aiApiToken ?? "") { _, _ in
-                models = []
-                modelLoadError = nil
+                invalidateModelList()
             }
             .onChange(of: settingsManager.aiBaseURLString) { _, _ in
-                models = []
-                modelLoadError = nil
+                invalidateModelList()
             }
         }
     }
@@ -436,7 +478,9 @@ struct SettingsView: View {
     private func handleConfigurationImportSelection(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            importConfiguration(from: urls)
+            guard !urls.isEmpty else { return }
+            pendingConfigurationURLs = urls
+            confirmConfigurationImport = true
         case .failure(let error):
             configurationTransferAlert = ConfigurationTransferAlert(
                 title: "导入失败",
@@ -456,7 +500,7 @@ struct SettingsView: View {
                 isImportingConfiguration = false
                 configurationTransferAlert = ConfigurationTransferAlert(
                     title: "导入完成",
-                    message: "已覆盖当前 AI 与 Workflow 配置"
+                    message: "已替换 AI 与工作流配置"
                 )
             } catch {
                 isImportingConfiguration = false
@@ -479,15 +523,18 @@ struct SettingsView: View {
             return
         }
 
+        let requestID = UUID()
+        modelRequestID = requestID
         isLoadingModels = true
         modelLoadError = nil
 
         defer {
-            isLoadingModels = false
+            if modelRequestID == requestID { isLoadingModels = false }
         }
 
         do {
             let fetchedModels = try await AIService.shared.fetchModels()
+            guard modelRequestID == requestID, !Task.isCancelled else { return }
             let textModels = fetchedModels
                 .filter { $0.supportsTextGeneration }
                 .sorted { $0.id.localizedCompare($1.id) == .orderedAscending }
@@ -500,16 +547,22 @@ struct SettingsView: View {
 
             models = textModels
 
-            if !textModels.contains(where: { $0.id == settingsManager.aiModelID }),
-               let firstModel = textModels.first {
-                settingsManager.aiModelID = firstModel.id
-            }
         } catch is CancellationError {
             return
         } catch {
+            guard modelRequestID == requestID, !Task.isCancelled else { return }
             models = []
-            modelLoadError = error.localizedDescription
+            modelLoadError = error.userFacingDescription
         }
+    }
+
+    private func invalidateModelList() {
+        modelLoadTask?.cancel()
+        modelLoadTask = nil
+        modelRequestID = UUID()
+        isLoadingModels = false
+        models = []
+        modelLoadError = nil
     }
 }
 
@@ -519,11 +572,12 @@ struct AgentSkillsSettingsView: View {
     var body: some View {
         List {
             if store.skills.isEmpty {
-                Section {
-                    Text("还没有 Skill。在「文件」App 的记录目录下创建 _skills 文件夹即可，AI 会自动识别。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                ContentUnavailableView {
+                    Label("还没有技能", systemImage: "sparkles")
+                } description: {
+                    Text("在“文件”App 的记录目录下创建 _skills 文件夹并添加技能文件，然后刷新列表。")
                 }
+                .listRowBackground(Color.clear)
             } else {
                 ForEach(store.skills) { skill in
                     VStack(alignment: .leading, spacing: 4) {
@@ -536,21 +590,21 @@ struct AgentSkillsSettingsView: View {
                         }
                         if !skill.description.isEmpty {
                             Text(skill.description)
-                                .font(.caption)
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         if skill.useCount > 0 {
                             Text("已使用 \(Int(skill.useCount)) 次")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 2)
                 }
             }
         }
-        .navigationTitle("Skills")
+        .navigationTitle("技能")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

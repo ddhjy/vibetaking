@@ -34,7 +34,7 @@ private struct WorkflowEditButton: View {
                 editMode?.wrappedValue = isEditing ? .inactive : .active
             }
         }
-        .tint(.primary)
+        .tint(Design.primaryColor)
         .id(WorkflowToolbarIdentity.editButton)
     }
 }
@@ -56,12 +56,18 @@ private struct WorkflowEditToolbarItem: ToolbarContent {
 }
 
 private enum WorkflowConfigStyle {
-    static let controlTint = Color(.label)
-    static let selectedForeground = Color(.systemBackground)
-    static let nodeBadgeFill = Color(.label).opacity(0.10)
+    static let controlTint = Design.primaryColor
+    static let selectedForeground = Color.white
+    static let nodeBadgeFill = Design.primaryColor.opacity(0.10)
 }
 
 struct WorkflowConfigView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var workflowToDelete: Workflow?
+    @State private var nodeOffsetsToDelete = IndexSet()
+    @State private var confirmNodeDeletion = false
+
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var workflowManager = WorkflowManager.shared
     @State private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
@@ -76,6 +82,27 @@ struct WorkflowConfigView: View {
             } else {
                 regularWorkflowSplitView
             }
+        }
+        .alert(item: $workflowToDelete) { workflow in
+            Alert(
+                title: Text("删除“\(displayName(for: workflow))”？"),
+                message: Text("此工作流及其步骤将被删除，记录内容不受影响。"),
+                primaryButton: .destructive(Text("删除工作流")) {
+                    workflowManager.deleteWorkflow(workflow.id)
+                    compactPath.removeAll { $0 == workflow.id }
+                    detailWorkflowId = workflowManager.selectedWorkflowId
+                },
+                secondaryButton: .cancel(Text("取消"))
+            )
+        }
+        .confirmationDialog("删除所选步骤？", isPresented: $confirmNodeDeletion, titleVisibility: .visible) {
+            Button("删除步骤", role: .destructive) {
+                workflowManager.deleteNodes(at: nodeOffsetsToDelete)
+                nodeOffsetsToDelete = []
+            }
+            Button("取消", role: .cancel) { nodeOffsetsToDelete = [] }
+        } message: {
+            Text("删除后，此工作流将不再执行这些步骤。")
         }
         .sheet(item: $presentation) { item in
             presentationView(for: item)
@@ -104,7 +131,7 @@ struct WorkflowConfigView: View {
             if let workflow = detailWorkflow {
                 workflowDetail(for: workflow)
             } else {
-                ContentUnavailableView("选择一个 Workflow", systemImage: "arrow.triangle.branch")
+                ContentUnavailableView("选择一个工作流", systemImage: "arrow.triangle.branch")
             }
         }
         .navigationSplitViewStyle(.balanced)
@@ -120,7 +147,7 @@ struct WorkflowConfigView: View {
                                 activateWorkflowDetail(workflow.id)
                             }
                     } else {
-                        ContentUnavailableView("Workflow 已被删除", systemImage: "exclamationmark.triangle")
+                        ContentUnavailableView("工作流已被删除", systemImage: "exclamationmark.triangle")
                     }
                 }
         }
@@ -158,14 +185,15 @@ struct WorkflowConfigView: View {
                 Button {
                     addWorkflow()
                 } label: {
-                    Label("新建 Workflow", systemImage: "plus.circle.fill")
+                    Label("新建工作流", systemImage: "plus.circle.fill")
                 }
             }
         }
-        .listStyle(.sidebar)
-        .navigationTitle("Workflow")
+        .listStyle(.insetGrouped)
+        .navigationTitle("工作流")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
             WorkflowEditToolbarItem()
         }
     }
@@ -218,14 +246,15 @@ struct WorkflowConfigView: View {
                 Button {
                     addWorkflow()
                 } label: {
-                    Label("新建 Workflow", systemImage: "plus.circle.fill")
+                    Label("新建工作流", systemImage: "plus.circle.fill")
                 }
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("Workflow")
+        .navigationTitle("工作流")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
             WorkflowEditToolbarItem()
         }
     }
@@ -242,19 +271,22 @@ struct WorkflowConfigView: View {
         .navigationTitle(displayName(for: workflow))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            WorkflowEditToolbarItem()
+            WorkflowEditToolbarItem(isVisible: !workflow.nodes.isEmpty)
         }
     }
 
     @ViewBuilder
     private func workflowHeader(for workflow: Workflow) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 14) {
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                : AnyLayout(HStackLayout(alignment: .top, spacing: 14))
+            layout {
                 Button {
                     presentation = .iconPicker(workflow.id)
                 } label: {
                     Image(systemName: workflow.icon)
-                        .font(.system(size: 28, weight: .medium))
+                        .font(.title.weight(.medium))
                         .foregroundStyle(WorkflowConfigStyle.controlTint)
                         .frame(width: 58, height: 58)
                         .background(Circle().fill(Color(.tertiarySystemFill)))
@@ -263,7 +295,7 @@ struct WorkflowConfigView: View {
                 .accessibilityLabel("更换图标")
 
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField("Workflow 名称", text: workflowNameBinding(for: workflow.id))
+                    TextField("工作流名称", text: workflowNameBinding(for: workflow.id))
                         .font(.title3.weight(.semibold))
                         .textFieldStyle(.plain)
                         .submitLabel(.done)
@@ -272,29 +304,29 @@ struct WorkflowConfigView: View {
                     Text(workflowSummary(for: workflow))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
-            HStack(spacing: 10) {
-                Button {
-                    workflowManager.toggleWorkflowOpen(workflow.id)
-                } label: {
-                    Label(workflow.isOpen ? "从主页隐藏" : "显示到主页", systemImage: workflow.isOpen ? "eye.slash" : "eye")
+            Toggle("在主页显示", isOn: Binding(
+                get: { workflow.isOpen },
+                set: { value in
+                    if value != workflow.isOpen { workflowManager.toggleWorkflowOpen(workflow.id) }
                 }
-                .buttonStyle(.bordered)
-                .tint(WorkflowConfigStyle.controlTint)
-                .disabled(!workflowManager.canCloseWorkflow(workflow.id))
+            ))
+            .disabled(workflow.isOpen && !workflowManager.canCloseWorkflow(workflow.id))
 
-                Menu {
-                    workflowContextMenu(for: workflow)
-                } label: {
-                    Label("更多", systemImage: "ellipsis.circle")
-                }
-                .buttonStyle(.bordered)
-                .tint(WorkflowConfigStyle.controlTint)
+            if workflow.isOpen && !workflowManager.canCloseWorkflow(workflow.id) {
+                Text("主页至少保留一个工作流。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-            .labelStyle(.titleAndIcon)
+
+            Menu { workflowContextMenu(for: workflow) } label: {
+                Label("工作流操作", systemImage: "ellipsis.circle")
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.borderless)
         }
         .padding(.vertical, 4)
     }
@@ -315,28 +347,35 @@ struct WorkflowConfigView: View {
                     )
                 }
                 .onMove { workflowManager.moveNode(from: $0, to: $1) }
-                .onDelete { workflowManager.deleteNodes(at: $0) }
+                .onDelete {
+                    nodeOffsetsToDelete = $0
+                    confirmNodeDeletion = true
+                }
             }
         } header: {
             Text("处理步骤")
         } footer: {
-            Text("步骤从上到下依次执行，长按可排序。")
+            if !workflow.nodes.isEmpty {
+                Text("步骤从上到下依次执行。点按步骤编辑，点按“编辑”调整顺序。")
+            }
         }
 
-        Section {
-            Button {
-                presentation = .addNode
-            } label: {
-                Label {
-                    Text("添加步骤")
-                        .foregroundStyle(.primary)
-                } icon: {
-                    Image(systemName: "plus.circle.fill")
-                        .symbolRenderingMode(.monochrome)
-                        .foregroundStyle(WorkflowConfigStyle.controlTint)
+        if !workflow.nodes.isEmpty {
+            Section {
+                Button {
+                    presentation = .addNode
+                } label: {
+                    Label {
+                        Text("添加步骤")
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "plus.circle.fill")
+                            .symbolRenderingMode(.monochrome)
+                            .foregroundStyle(WorkflowConfigStyle.controlTint)
+                    }
                 }
+                .tint(WorkflowConfigStyle.controlTint)
             }
-            .tint(WorkflowConfigStyle.controlTint)
         }
     }
 
@@ -366,9 +405,7 @@ struct WorkflowConfigView: View {
         if workflowManager.canDeleteWorkflow(workflow.id) {
             Divider()
             Button(role: .destructive) {
-                withAnimation {
-                    workflowManager.deleteWorkflow(workflow.id)
-                }
+                workflowToDelete = workflow
             } label: {
                 Label("删除", systemImage: "trash")
             }
@@ -410,7 +447,7 @@ struct WorkflowConfigView: View {
 
     private func displayName(for workflow: Workflow) -> String {
         let trimmed = workflow.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "未命名 Workflow" : trimmed
+        return trimmed.isEmpty ? "未命名工作流" : trimmed
     }
 
     private func iconName(for workflowID: UUID) -> String {
@@ -429,7 +466,7 @@ struct WorkflowConfigView: View {
 
     private func addWorkflow() {
         let count = workflowManager.workflows.count + 1
-        let workflow = Workflow(name: "Workflow \(count)", kind: .manual)
+        let workflow = Workflow(name: "工作流 \(count)", kind: .manual)
         workflowManager.addWorkflow(workflow)
         selectWorkflowForEditing(workflow.id)
         if horizontalSizeClass == .compact {
@@ -483,7 +520,7 @@ struct WorkflowConfigView: View {
     private func normalizeWorkflowName(_ workflowID: UUID) {
         updateWorkflow(workflowID) { workflow in
             let trimmed = workflow.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            workflow.name = trimmed.isEmpty ? "未命名 Workflow" : trimmed
+            workflow.name = trimmed.isEmpty ? "未命名工作流" : trimmed
         }
     }
 
@@ -500,20 +537,20 @@ private struct WorkflowSidebarRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: workflow.icon)
-                .font(.system(size: 17, weight: .medium))
+                .font(.body.weight(.medium))
                 .foregroundStyle(iconColor)
                 .frame(width: 24)
 
             Text(displayName)
-                .font(.callout)
-                .lineLimit(1)
+                .font(.body)
+                .lineLimit(2)
         }
         .padding(.vertical, 2)
     }
 
     private var displayName: String {
         let trimmed = workflow.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "未命名 Workflow" : trimmed
+        return trimmed.isEmpty ? "未命名工作流" : trimmed
     }
 
     private var iconColor: Color {
@@ -527,7 +564,7 @@ private struct EmptyWorkflowNodesView: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 30, weight: .medium))
+                .font(.largeTitle)
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 4) {
@@ -561,52 +598,40 @@ struct NodeRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text("\(position)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(node.isEnabled ? WorkflowConfigStyle.controlTint : .secondary)
-                .frame(width: 28, height: 28)
-                .background(
-                    Circle()
-                        .fill(node.isEnabled ? WorkflowConfigStyle.nodeBadgeFill : Color(.tertiarySystemFill))
-                )
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Image(systemName: node.type.icon)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(node.isEnabled ? .primary : .secondary)
-                        .frame(width: 18)
-
-                    Text(node.type.displayName)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(node.isEnabled ? .primary : .secondary)
+            Button(action: onEdit) {
+                HStack(alignment: .top, spacing: 12) {
+                    Text(position.formatted())
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.secondary)
+                        .frame(minWidth: 24, minHeight: 28)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(node.type.displayName, systemImage: node.type.icon)
+                            .font(.body)
+                            .foregroundStyle(Color.primary)
+                        if let detail = nodeDetail {
+                            Text(detail).font(.subheadline).foregroundStyle(Color.secondary).lineLimit(2)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                if let detail = nodeDetail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("\(node.type == .copyToClipboard || node.type == .save ? "查看" : "编辑")第 \(position) 步，\(node.type.displayName)")
 
-            Spacer()
-
-            Toggle("", isOn: Binding(
+            Toggle("启用步骤", isOn: Binding(
                 get: { node.isEnabled },
-                set: { newValue in
+                set: { value in
                     var updated = node
-                    updated.isEnabled = newValue
+                    updated.isEnabled = value
                     workflowManager.updateNode(updated)
                 }
             ))
             .labelsHidden()
-            .tint(WorkflowConfigStyle.controlTint)
+            .accessibilityLabel("启用第 \(position) 步，\(node.type.displayName)")
         }
-        .contentShape(Rectangle())
-        .onTapGesture { onEdit() }
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("\(position). \(node.type.displayName)")
+        .padding(.vertical, 4)
     }
 
     private var nodeDetail: String? {
@@ -649,25 +674,32 @@ struct AddNodeSheet: View {
                         workflowManager.addNode(newNode)
                         dismiss()
                     } label: {
-                        Label(type.displayName, systemImage: type.icon)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label(type.displayName, systemImage: type.icon).font(.body)
+                            Text(type.explanation).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("添加\(type.displayName)步骤")
+                    .accessibilityHint(type.explanation)
                 }
             }
-            .listStyle(.plain)
+            .listStyle(.insetGrouped)
             .tint(WorkflowConfigStyle.controlTint)
             .navigationTitle("添加步骤")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
-                        .tint(.primary)
+                        .tint(Design.primaryColor)
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .presentationBackground(.regularMaterial)
     }
 }
 
@@ -681,25 +713,54 @@ struct EditNodeSheet: View {
     @State private var httpHost: String = ""
     @State private var httpPort: String = ""
     @State private var boundServiceName: String?
+    @State private var deviceResolutionTask: Task<Void, Never>?
+    @State private var isResolvingDevice = false
+    @State private var resolutionError: String?
+
+    private var hasEditableConfiguration: Bool {
+        node.type != .copyToClipboard && node.type != .save
+    }
+
+    private var isValid: Bool {
+        guard !isResolvingDevice else { return false }
+        if node.type == .aiProcess {
+            return !aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if node.type == .agentProcess {
+            return !agentPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard node.type == .httpPost, boundServiceName == nil else { return true }
+        guard let port = Int(httpPort.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        return HTTPTargetURL.make(host: httpHost, port: port) != nil
+    }
+
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Label(node.type.displayName, systemImage: node.type.icon)
+                    Text(node.type.explanation).font(.subheadline).foregroundStyle(.secondary)
+                }
                 if node.type == .aiProcess {
                     Section("AI 提示词") {
-                        TextField("告诉 AI 怎样处理草稿…", text: $aiPrompt, axis: .vertical)
-                            .lineLimit(5...)
+                        TextEditor(text: $aiPrompt)
+                            .font(.body)
+                            .frame(minHeight: 140)
+                            .accessibilityLabel("AI 提示词")
                     }
                 }
 
                 if node.type == .agentProcess {
                     Section {
-                        TextField("描述 Agent 要完成的任务…", text: $agentPrompt, axis: .vertical)
-                            .lineLimit(5...)
+                        TextEditor(text: $agentPrompt)
+                            .font(.body)
+                            .frame(minHeight: 140)
+                            .accessibilityLabel("助手指令")
                     } header: {
-                        Text("Agent 指令")
+                        Text("助手指令")
                     } footer: {
-                        Text("Agent 可多轮调用工具完成任务，最终结果传给下一步。")
+                        Text("AI 助手可调用工具完成任务，最终结果传给下一步。")
                     }
                 }
 
@@ -707,45 +768,75 @@ struct EditNodeSheet: View {
                     DeviceBindingSection(
                         boundServiceName: boundServiceName,
                         onSelect: { device in
+                            deviceResolutionTask?.cancel()
                             boundServiceName = device.serviceName
-                            Task {
-                                if let resolved = await BonjourResolver.resolve(serviceName: device.serviceName) {
+                            isResolvingDevice = true
+                            resolutionError = nil
+                            deviceResolutionTask = Task { @MainActor in
+                                let resolved = await BonjourResolver.resolve(serviceName: device.serviceName)
+                                guard !Task.isCancelled, boundServiceName == device.serviceName else { return }
+                                isResolvingDevice = false
+                                if let resolved {
                                     httpHost = resolved.host
                                     httpPort = "\(resolved.port)"
+                                } else {
+                                    resolutionError = "暂时无法连接此设备。保存后，发送时会重新查找。"
                                 }
                             }
                         },
-                        onUnbind: { boundServiceName = nil }
+                        onUnbind: {
+                            deviceResolutionTask?.cancel()
+                            isResolvingDevice = false
+                            resolutionError = nil
+                            boundServiceName = nil
+                        }
                     )
 
+                    if isResolvingDevice { ProgressView("正在连接设备…") }
+                    if let resolutionError {
+                        Label(resolutionError, systemImage: "exclamationmark.circle").font(.footnote)
+                    }
                     if boundServiceName == nil {
                         Section {
-                            TextField("主机地址", text: $httpHost)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                                .keyboardType(.URL)
-                            TextField("端口", text: $httpPort)
-                                .keyboardType(.numberPad)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("主机地址").font(.subheadline).foregroundStyle(.secondary)
+                                TextField("例如：192.168.1.10", text: $httpHost)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .keyboardType(.URL)
+                                    .accessibilityLabel("主机地址")
+                            }
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("端口").font(.subheadline).foregroundStyle(.secondary)
+                                TextField("9999", text: $httpPort)
+                                    .keyboardType(.numberPad)
+                                    .accessibilityLabel("端口")
+                            }
                         } header: {
                             Text("HTTP 配置")
                         } footer: {
-                            Text("未绑定设备时，内容发送到此地址。")
+                            Text(isValid ? "未绑定设备时，内容发送到此地址。" : "填写主机名或 IP 地址（不含 http:// 和路径），以及 1–65535 之间的端口。")
                         }
                     }
                 }
 
             }
-            .navigationTitle("编辑步骤")
+            .navigationTitle(hasEditableConfiguration ? "编辑步骤" : "步骤详情")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
+            .onDisappear { deviceResolutionTask?.cancel() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") { dismiss() }
-                        .tint(.primary)
+                    if hasEditableConfiguration { Button("取消") { dismiss() } }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("保存") { saveChanges() }
-                        .fontWeight(.semibold)
-                        .tint(.primary)
+                    if hasEditableConfiguration {
+                        Button("保存") { saveChanges() }
+                            .disabled(!isValid)
+                            .fontWeight(.semibold)
+                    } else {
+                        Button("完成") { dismiss() }.fontWeight(.semibold)
+                    }
                 }
             }
             .onAppear {
@@ -760,11 +851,12 @@ struct EditNodeSheet: View {
     }
 
     private func saveChanges() {
+        guard isValid else { return }
         var updated = node
         updated.config.aiPrompt = aiPrompt.isEmpty ? nil : aiPrompt
         updated.config.agentPrompt = agentPrompt.isEmpty ? nil : agentPrompt
-        updated.config.httpHost = httpHost.isEmpty ? nil : httpHost
-        updated.config.httpPort = Int(httpPort)
+        updated.config.httpHost = httpHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : httpHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.config.httpPort = Int(httpPort.trimmingCharacters(in: .whitespacesAndNewlines))
         updated.config.httpServiceName = boundServiceName
         workflowManager.updateNode(updated)
         dismiss()
@@ -772,6 +864,8 @@ struct EditNodeSheet: View {
 }
 
 struct DeviceBindingSection: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let boundServiceName: String?
     let onSelect: (DiscoveredDevice) -> Void
     let onUnbind: () -> Void
@@ -781,7 +875,10 @@ struct DeviceBindingSection: View {
     var body: some View {
         Section {
             if let boundServiceName {
-                HStack(spacing: 10) {
+                let layout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                    : AnyLayout(HStackLayout(spacing: 10))
+                layout {
                     Image(systemName: "laptopcomputer")
                         .foregroundStyle(WorkflowConfigStyle.controlTint)
 
@@ -795,8 +892,10 @@ struct DeviceBindingSection: View {
 
                     Spacer()
 
-                    Button("解绑", role: .destructive, action: onUnbind)
-                        .font(.callout)
+                    Button("解除绑定", role: .destructive, action: onUnbind)
+                        .font(.body)
+                        .frame(minHeight: 44)
+                        .buttonStyle(.borderless)
                 }
             }
 
@@ -863,6 +962,8 @@ struct DeviceBindingSection: View {
 
 
 struct IconPickerView: View {
+    @ScaledMetric(relativeTo: .title2) private var iconSize = 52.0
+
     let selectedIcon: String
     let onSelect: (String) -> Void
 
@@ -934,7 +1035,7 @@ struct IconPickerView: View {
             "airplane", "ferry", "bicycle",
             "figure.walk", "figure.run", "map",
             "mappin.and.ellipse", "location", "compass.drawing",
-            "fuelpump", "ev.charger", "parking"
+            "fuelpump", "ev.charger", "parkingsign"
         ]),
         ("安全与隐私", [
             "lock", "lock.open", "key",
@@ -953,19 +1054,32 @@ struct IconPickerView: View {
 
     private var filteredIcons: [(category: String, symbols: [String])] {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty else { return icons }
-        return icons.compactMap { group in
-            let filtered = group.symbols.filter { $0.lowercased().contains(trimmed) }
+        let available = icons.map { group in
+            (category: group.category, symbols: group.symbols.filter { UIImage(systemName: $0) != nil })
+        }
+        guard !trimmed.isEmpty else { return available }
+        return available.compactMap { group in
+            let filtered = group.symbols.filter {
+                group.category.localizedStandardContains(trimmed)
+                    || $0.lowercased().contains(trimmed)
+                    || symbolLabel($0).localizedStandardContains(trimmed)
+            }
             return filtered.isEmpty ? nil : (group.category, filtered)
         }
     }
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
+    private var columns: [GridItem] { [GridItem(.adaptive(minimum: iconSize), spacing: 12)] }
+
+    private func symbolLabel(_ symbol: String) -> String {
+        let names = ["arrow.triangle.branch": "工作流", "bolt": "闪电", "sparkles": "星光", "gearshape": "设置", "terminal": "终端", "text.bubble": "文字气泡", "envelope": "信封", "paperplane": "发送", "doc.text": "文档", "folder": "文件夹", "tray.full": "收件箱", "play": "播放", "stop": "停止", "briefcase": "公文包", "chart.bar": "统计", "calendar": "日历", "clock": "时钟", "flag": "旗帜", "bookmark": "书签", "link": "链接", "network": "网络", "laptopcomputer": "笔记本电脑", "desktopcomputer": "台式电脑", "camera": "相机", "photo": "照片", "music.note": "音乐", "lightbulb": "灯泡", "star": "星星", "heart": "爱心", "phone": "电话", "video": "视频", "mic": "麦克风", "bell": "铃铛", "person": "人物", "globe": "地球", "shuffle": "随机", "sun.max": "太阳", "moon": "月亮", "cloud": "云", "leaf": "叶子", "lock": "锁", "key": "钥匙", "shield": "盾牌", "house": "房屋", "gift": "礼物"]
+        return names[symbol] ?? symbol.replacingOccurrences(of: ".", with: " ")
+    }
+
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                LazyVStack(alignment: .leading, spacing: 20) {
                     ForEach(filteredIcons, id: \.category) { group in
                         VStack(alignment: .leading, spacing: 10) {
                             Text(group.category)
@@ -981,8 +1095,8 @@ struct IconPickerView: View {
                                         dismiss()
                                     } label: {
                                         Image(systemName: symbol)
-                                            .font(.system(size: 22))
-                                            .frame(width: 48, height: 48)
+                                            .font(.title2)
+                                            .frame(maxWidth: .infinity, minHeight: iconSize)
                                             .foregroundStyle(isSelected ? WorkflowConfigStyle.selectedForeground : .primary)
                                             .background(
                                                 RoundedRectangle(cornerRadius: 10)
@@ -990,6 +1104,16 @@ struct IconPickerView: View {
                                             )
                                     }
                                     .buttonStyle(.plain)
+                                    .overlay(alignment: .topTrailing) {
+                                        if isSelected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.caption)
+                                                .foregroundStyle(.white, Design.primaryColor)
+                                                .accessibilityHidden(true)
+                                        }
+                                    }
+                                    .accessibilityLabel("\(group.category)，\(symbolLabel(symbol))")
+                                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                                 }
                             }
                         }
@@ -997,18 +1121,40 @@ struct IconPickerView: View {
                 }
                 .padding(16)
             }
+            .overlay {
+                if filteredIcons.isEmpty {
+                    ContentUnavailableView("没有匹配的图标", systemImage: "magnifyingglass",
+                                           description: Text("试试其他图标名称或类别。"))
+                }
+            }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("选择图标")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "搜索图标名称")
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
                         .fontWeight(.semibold)
-                        .tint(.primary)
+                        .tint(Design.primaryColor)
                 }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .presentationBackground(Color(.systemGroupedBackground))
+    }
+}
+
+private extension WorkflowNodeType {
+    var explanation: String {
+        switch self {
+        case .aiProcess: "根据提示词处理文本，把结果交给下一步。"
+        case .agentProcess: "让 AI 助手结合笔记和工具完成任务。"
+        case .copyToClipboard: "将当前文本复制到系统剪贴板，供其他 App 粘贴。"
+        case .save: "将处理后的文本和草稿标签保存到记录中。"
+        case .httpPost: "将文本发送到同一网络中的 Mac 或指定地址。"
+        }
     }
 }

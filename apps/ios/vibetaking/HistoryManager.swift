@@ -256,6 +256,7 @@ class HistoryManager {
     
     func updateDraftText(_ text: String) {
         guard let index = items.firstIndex(where: { $0.isDraft }) else { return }
+        guard items[index].text != text else { return }
         if !text.isEmpty {
             lastClearedText = ""
         }
@@ -1000,13 +1001,20 @@ class HistoryManager {
         
         for index in items.indices {
             guard !items[index].isDownloading else { continue }
-            if let tagIndex = items[index].tags.firstIndex(of: oldName) {
-                items[index].tags[tagIndex] = trimmedNewName
-                saveItem(items[index])
+            if items[index].tags.contains(oldName) {
+                var seen: Set<String> = []
+                items[index].tags = items[index].tags
+                    .map { $0 == oldName ? trimmedNewName : $0 }
+                    .filter { seen.insert($0).inserted }
+                if items[index].isDraft {
+                    saveDraft()
+                } else {
+                    saveItem(items[index])
+                }
             }
         }
         
-        TagManager.shared.refreshTags(from: items)
+        TagManager.shared.refreshTags(from: savedItems)
     }
     
     private func saveItem(_ item: HistoryItem) {

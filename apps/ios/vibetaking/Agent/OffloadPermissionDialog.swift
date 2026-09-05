@@ -11,82 +11,80 @@ import SwiftUI
 
 struct OffloadPermissionDialog: View {
     let request: PermissionRequest
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var manager = OffloadPermissionManager.shared
 
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: iconName)
-                .font(.system(size: 40))
-                .foregroundStyle(Design.primaryColor)
-                .padding(.top, 28)
-
-            VStack(spacing: 6) {
-                Text("允许 AI 访问\(request.displayLabel)？")
-                    .font(.headline)
-                if !request.description.isEmpty {
-                    Text(request.description)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            let arguments = request.parsedArguments
-            if !arguments.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(arguments.enumerated()), id: \.offset) { _, pair in
-                        HStack(alignment: .top, spacing: 8) {
-                            Text(pair.key)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 72, alignment: .trailing)
-                            Text(pair.value)
-                                .font(.system(.caption, design: .monospaced))
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(spacing: 12) {
+                        Image(systemName: iconName)
+                            .font(.largeTitle)
+                            .foregroundStyle(Design.primaryColor)
+                            .accessibilityHidden(true)
+                        Text("允许 AI 访问\(request.displayLabel)？")
+                            .font(.title2.bold())
+                            .accessibilityAddTraits(.isHeader)
+                        if !request.description.isEmpty {
+                            Text(request.description).font(.body).foregroundStyle(.secondary)
                         }
                     }
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+
+                    if !request.parsedArguments.isEmpty {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("访问详情").font(.headline).accessibilityAddTraits(.isHeader)
+                            ForEach(Array(request.parsedArguments.enumerated()), id: \.offset) { _, pair in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(pair.key).font(.subheadline).foregroundStyle(.secondary)
+                                    Text(pair.value)
+                                        .font(.system(.footnote, design: .monospaced))
+                                        .textSelection(.enabled)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .accessibilityElement(children: .combine)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Text("允许后，本次会话内访问此项权限将不再询问。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(12)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
-                .padding(.horizontal, 20)
+                .padding(20)
+                .frame(maxWidth: Design.readingWidth)
+                .frame(maxWidth: .infinity)
             }
-
-            Text("本次会话内不再询问")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-
-            HStack(spacing: 12) {
-                Button {
-                    manager.respond(to: request.id, allowed: false)
-                } label: {
-                    Text("拒绝")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+            .navigationTitle("设备访问")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 10) {
+                    Button { manager.respond(to: request.id, allowed: true) } label: {
+                        Text("本次会话允许").frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button { manager.respond(to: request.id, allowed: false) } label: {
+                        Text("不允许").frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
-
-                Button {
-                    manager.respond(to: request.id, allowed: true)
-                } label: {
-                    Text("允许")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                }
-                .buttonStyle(.borderedProminent)
+                .padding(16)
+                .background(Color(.systemBackground))
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 24)
         }
-        .presentationDetents([.medium])
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         .interactiveDismissDisabled()
+        .accessibilityAction(.escape) { manager.respond(to: request.id, allowed: false) }
     }
 
     private var iconName: String {
         switch request.commandName {
-        case "apple-calendar": return "calendar"
-        case "apple-reminders": return "checklist"
-        case "apple-clipboard": return "doc.on.clipboard"
-        default: return "questionmark.circle"
+        case "apple-calendar": "calendar"
+        case "apple-reminders": "checklist"
+        case "apple-clipboard": "doc.on.clipboard"
+        default: "questionmark.circle"
         }
     }
 }
@@ -115,9 +113,10 @@ struct OffloadPermissionSettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .pickerStyle(.navigationLink)
                 }
             } footer: {
-                Text("选择「每次询问」后，AI 首次访问时会弹窗确认。")
+                Text("选择“每段会话询问”后，AI 会在每段会话首次访问时请求允许。")
             }
         }
         .navigationTitle("设备权限")

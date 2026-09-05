@@ -10,52 +10,6 @@ import Foundation
 
 private nonisolated let logger = AppLogger(category: "DeviceOffload")
 
-// MARK: - Shell-style tokenizer
-
-/// 把一条命令行参数串分词（支持双引号/单引号与反斜杠转义）。
-nonisolated func tokenizeCommandLine(_ input: String) -> [String] {
-    var tokens: [String] = []
-    var current = ""
-    var inSingle = false
-    var inDouble = false
-    var escaped = false
-    var hasContent = false
-
-    for ch in input {
-        if escaped {
-            current.append(ch)
-            escaped = false
-            continue
-        }
-        switch ch {
-        case "\\" where !inSingle:
-            escaped = true
-            hasContent = true
-        case "'" where !inDouble:
-            inSingle.toggle()
-            hasContent = true
-        case "\"" where !inSingle:
-            inDouble.toggle()
-            hasContent = true
-        case " ", "\t", "\n":
-            if inSingle || inDouble {
-                current.append(ch)
-            } else if hasContent || !current.isEmpty {
-                tokens.append(current)
-                current = ""
-                hasContent = false
-            }
-        default:
-            current.append(ch)
-            hasContent = true
-        }
-    }
-    if hasContent || !current.isEmpty {
-        tokens.append(current)
-    }
-    return tokens
-}
-
 // MARK: - Offload Runner
 
 nonisolated enum DeviceOffloadRunner {
@@ -114,6 +68,7 @@ nonisolated enum DeviceOffloadRunner {
 /// 三个设备工具的公共执行路径：权限门控 → 分词 → 执行 → 输出。
 private func executeDeviceCommand(
     commandName: String,
+    sessionId: String,
     main: @escaping DeviceOffloadRunner.OffloadMain,
     args: [String: Any]
 ) async -> AgentToolResult {
@@ -122,9 +77,9 @@ private func executeDeviceCommand(
     argv.append(contentsOf: tokenizeCommandLine(rawArguments))
 
     // 应用层三档权限门控（独立于 iOS 系统权限弹窗）。
-    let fullCommand = argv.joined(separator: " ")
+    let fullCommand = "\(commandName) \(rawArguments)"
     let permission = await OffloadPermissionManager.shared.checkPermission(
-        for: commandName, sessionId: nil, fullCommand: fullCommand
+        for: commandName, sessionId: sessionId, fullCommand: fullCommand
     )
     if case .denied(let message) = permission {
         return .failure(message)
@@ -151,6 +106,7 @@ private func executeDeviceCommand(
 // MARK: - calendar_manage
 
 struct CalendarManageTool: AgentTool {
+    let sessionId: String
     var definition: AgentToolDefinition {
         AgentToolDefinition(
             name: "calendar_manage",
@@ -171,13 +127,14 @@ struct CalendarManageTool: AgentTool {
     }
 
     func execute(args: [String: Any]) async -> AgentToolResult {
-        await executeDeviceCommand(commandName: "apple-calendar", main: apple_calendar_main, args: args)
+        await executeDeviceCommand(commandName: "apple-calendar", sessionId: sessionId, main: apple_calendar_main, args: args)
     }
 }
 
 // MARK: - reminders_manage
 
 struct RemindersManageTool: AgentTool {
+    let sessionId: String
     var definition: AgentToolDefinition {
         AgentToolDefinition(
             name: "reminders_manage",
@@ -197,13 +154,14 @@ struct RemindersManageTool: AgentTool {
     }
 
     func execute(args: [String: Any]) async -> AgentToolResult {
-        await executeDeviceCommand(commandName: "apple-reminders", main: apple_reminders_main, args: args)
+        await executeDeviceCommand(commandName: "apple-reminders", sessionId: sessionId, main: apple_reminders_main, args: args)
     }
 }
 
 // MARK: - clipboard_access
 
 struct ClipboardAccessTool: AgentTool {
+    let sessionId: String
     var definition: AgentToolDefinition {
         AgentToolDefinition(
             name: "clipboard_access",
@@ -221,6 +179,6 @@ struct ClipboardAccessTool: AgentTool {
     }
 
     func execute(args: [String: Any]) async -> AgentToolResult {
-        await executeDeviceCommand(commandName: "apple-clipboard", main: apple_clipboard_main, args: args)
+        await executeDeviceCommand(commandName: "apple-clipboard", sessionId: sessionId, main: apple_clipboard_main, args: args)
     }
 }

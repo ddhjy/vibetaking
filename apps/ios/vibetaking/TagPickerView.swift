@@ -2,7 +2,6 @@ import SwiftUI
 
 struct TagPickerView: View {
     let itemId: UUID
-    var reselectMode: Bool = false
     
     @State private var historyManager = HistoryManager.shared
     @State private var tagManager = TagManager.shared
@@ -13,15 +12,13 @@ struct TagPickerView: View {
     
     @State private var frozenSortedTags: [String] = []
     
-    @State private var pendingRenameOperation: (from: String, to: String)? = nil
+    @State private var didInitialize = false
     
     @State private var localSelectedTags: Set<String> = []
     
     @State private var initialSelectedTags: Set<String> = []
     
-    @State private var previousSelectedTags: Set<String> = []
     
-    @State private var hasStartedReselection: Bool = false
 
     @State private var locallyCreatedTags: Set<String> = []
 
@@ -67,7 +64,10 @@ struct TagPickerView: View {
                 recommendationRank[tag] = index
             }
         }
-        let availableTags = Array(Set(tagManager.tags).union(locallyCreatedTags))
+        let availableTags = Array(Set(tagManager.tags)
+            .union(selectedTagsSet)
+            .union(initialSelectedTags)
+            .union(locallyCreatedTags))
         return availableTags.sorted { tag1, tag2 in
             let tag1Selected = selectedTagsSet.contains(tag1)
             let tag2Selected = selectedTagsSet.contains(tag2)
@@ -130,196 +130,107 @@ struct TagPickerView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if tagManager.tags.isEmpty {
-                    emptyTagsView
-                    Spacer()
+            List {
+                if displayedTags.isEmpty {
+                    ContentUnavailableView {
+                        Label(trimmedSearchText.isEmpty ? "还没有标签" : "没有匹配的标签", systemImage: "tag")
+                    } description: {
+                        Text("创建标签，方便之后找到相关记录。")
+                    } actions: {
+                        Button(canCreateTagFromSearch ? "创建“\(trimmedSearchText)”" : "新建标签") {
+                            if canCreateTagFromSearch { createTagFromSearch() } else { showCreateTag = true }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .listRowBackground(Color.clear)
                 } else {
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            if displayedTags.isEmpty {
-                                VStack(spacing: 12) {
-                                    Text("没有匹配的标签")
-                                        .font(.subheadline)
-                                        .foregroundStyle(Color(.secondaryLabel))
-
-                                    if canCreateTagFromSearch {
-                                        Button(action: createTagFromSearch) {
-                                            Label("新增标签 \"\(trimmedSearchText)\"", systemImage: "plus.circle.fill")
-                                                .font(.callout.weight(.medium))
-                                                .frame(maxWidth: .infinity)
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        .tint(Design.primaryColor)
-                                        .padding(.horizontal, 16)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 60)
-                            } else {
-                                ForEach(displayedTags.indices, id: \.self) { index in
-                                    let tagName = displayedTags[index]
-                                    let isCurrentlySelected = localSelectedTags.contains(tagName)
-                                    let isPreviouslySelected = reselectMode && !hasStartedReselection && previousSelectedTags.contains(tagName)
-                                    TagRowView(
-                                        tagName: tagName,
-                                        isSelected: isCurrentlySelected,
-                                        isPreviousSelected: isPreviouslySelected,
-                                        markers: markers(for: tagName, isSelected: isCurrentlySelected, isPreviousSelected: isPreviouslySelected),
-                                        onToggle: { toggleTag(tagName) },
-                                        onEdit: { editingTagName = tagName }
-                                    )
-                                    
-                                    if index != displayedTags.count - 1 {
-                                        Divider()
-                                            .padding(.leading, 52)
-                                    }
-                                }
+                    Section {
+                        ForEach(displayedTags, id: \.self) { tagName in
+                            TagRowView(
+                                tagName: tagName,
+                                isSelected: localSelectedTags.contains(tagName),
+                                markers: recommendedTagSet.contains(tagName) ? [.aiRecommended] : [],
+                                onToggle: { toggleTag(tagName) },
+                                onEdit: { editingTagName = tagName }
+                            )
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button("重命名", systemImage: "pencil") { editingTagName = tagName }
                             }
                         }
-                        .padding(.top, 16)
+                    } footer: {
+                        Text("已选择 \(selectedTagCount) 个标签，关闭时自动保存。")
                     }
-                    Spacer()
                 }
             }
-            .background(
-                Color(.systemGroupedBackground)
-                    .ignoresSafeArea()
-            )
-            .navigationTitle(selectedTagCount > 0 ? "标签 (\(selectedTagCount))" : "标签")
+            .listStyle(.insetGrouped)
+            .navigationTitle("标签")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索标签")
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索或创建标签")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(action: { showCreateTag = true }) {
-                        Image(systemName: "plus")
-                    }
+                    Button("新建标签", systemImage: "plus") { showCreateTag = true }
                 }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") {
-                        dismiss()
-                    }
-                    .fontWeight(.semibold)
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                        .fontWeight(.semibold)
                 }
             }
-            .sheet(isPresented: $showCreateTag, onDismiss: {
-                refreshSortedTags()
-            }) {
-                TagCreateSheet(itemId: itemId)
-            }
-            .sheet(item: $editingTagName, onDismiss: {
-                if let operation = pendingRenameOperation {
-                    historyManager.renameTag(from: operation.from, to: operation.to)
-                    recommendedTags = recommendedTags.map { $0 == operation.from ? operation.to : $0 }
-                    refreshSortedTags()
-                    pendingRenameOperation = nil
+            .sheet(isPresented: $showCreateTag) {
+                TagCreateSheet { name in
+                    addLocalTag(name)
                 }
-            }) { tagName in
+            }
+            .sheet(item: $editingTagName) { tagName in
                 TagEditSheet(tagName: tagName) { newName in
-                    pendingRenameOperation = (from: tagName, to: newName)
+                    historyManager.renameTag(from: tagName, to: newName)
+                    if localSelectedTags.remove(tagName) != nil { localSelectedTags.insert(newName) }
+                    if initialSelectedTags.remove(tagName) != nil { initialSelectedTags.insert(newName) }
+                    if locallyCreatedTags.remove(tagName) != nil { locallyCreatedTags.insert(newName) }
+                    recommendedTags = recommendedTags.map { $0 == tagName ? newName : $0 }
+                    refreshSortedTags()
                 }
             }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear {
-            if frozenSortedTags.isEmpty {
-                let currentTags = Set(currentItem?.tags ?? [])
-                initialSelectedTags = currentTags
-                
-                if reselectMode {
-                    localSelectedTags = []
-                    previousSelectedTags = currentTags
-                    hasStartedReselection = false
-                } else {
-                    localSelectedTags = currentTags
-                }
-                
-                refreshSortedTags()
-                requestRecommendedTagsIfNeeded()
-            }
+            guard !didInitialize else { return }
+            didInitialize = true
+            let currentTags = Set(currentItem?.tags ?? [])
+            initialSelectedTags = currentTags
+            localSelectedTags = currentTags
+            refreshSortedTags()
+            requestRecommendedTagsIfNeeded()
         }
         .onDisappear {
             recommendationTask?.cancel()
             recommendationTask = nil
-
-            let addedTags = localSelectedTags.subtracting(initialSelectedTags)
-            let removedTags = initialSelectedTags.subtracting(localSelectedTags)
-            
-            for tag in addedTags {
+            for tag in localSelectedTags.subtracting(initialSelectedTags) {
                 historyManager.addTag(to: itemId, tagName: tag)
             }
-            for tag in removedTags {
+            for tag in initialSelectedTags.subtracting(localSelectedTags) {
                 historyManager.removeTag(from: itemId, tagName: tag)
             }
+            initialSelectedTags = localSelectedTags
         }
     }
-    
-    private var emptyTagsView: some View {
-        VStack(spacing: 12) {
-            Text("还没有标签，试试创建一个")
-                .font(.subheadline)
-                .foregroundStyle(Color(.secondaryLabel))
 
-            if canCreateTagFromSearch {
-                Button(action: createTagFromSearch) {
-                    Label("新增标签 \"\(trimmedSearchText)\"", systemImage: "plus.circle.fill")
-                        .font(.callout.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Design.primaryColor)
-                .padding(.horizontal, 16)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
-    }
-    
     private func toggleTag(_ tagName: String) {
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-            if localSelectedTags.contains(tagName) {
-                localSelectedTags.remove(tagName)
-            } else {
-                selectTag(tagName)
-            }
+        if !localSelectedTags.insert(tagName).inserted {
+            localSelectedTags.remove(tagName)
         }
+    }
+
+    private func addLocalTag(_ name: String) {
+        locallyCreatedTags.insert(name)
+        localSelectedTags.insert(name)
+        refreshSortedTags()
+        searchText = ""
     }
 
     private func createTagFromSearch() {
-        let newTag = trimmedSearchText
-        guard !newTag.isEmpty else { return }
-
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-            locallyCreatedTags.insert(newTag)
-            selectTag(newTag)
-            refreshSortedTags()
-        }
-    }
-
-    private func selectTag(_ tagName: String) {
-        if reselectMode && !hasStartedReselection {
-            hasStartedReselection = true
-            previousSelectedTags = []
-            localSelectedTags = [tagName]
-        } else {
-            localSelectedTags.insert(tagName)
-        }
-    }
-
-    private func markers(for tagName: String, isSelected: Bool, isPreviousSelected: Bool) -> [TagRowMarker] {
-        var markers: [TagRowMarker] = []
-
-        if !isSelected && isPreviousSelected {
-            markers.append(.recent)
-        }
-
-        if recommendedTagSet.contains(tagName) {
-            markers.append(.aiRecommended)
-        }
-
-        return markers
+        guard !trimmedSearchText.isEmpty else { return }
+        addLocalTag(trimmedSearchText)
     }
 }
 
@@ -343,75 +254,51 @@ enum TagRowMarker: String, Identifiable {
 }
 
 struct TagRowView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let tagName: String
     let isSelected: Bool
-    var isPreviousSelected: Bool = false
     var markers: [TagRowMarker] = []
     let onToggle: () -> Void
     var onEdit: (() -> Void)? = nil
-    private let selectionCircleSize: CGFloat = 20
-    private let selectionIconSlotSize: CGFloat = 24
-    
-    private var circleColor: Color {
-        if isSelected {
-            return Design.primaryColor
-        } else if isPreviousSelected {
-            return Color(.systemGray3)
-        } else {
-            return Color(.secondaryLabel)
-        }
-    }
-    
+
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .stroke(circleColor, lineWidth: 1.8)
-                    .frame(width: selectionCircleSize, height: selectionCircleSize)
+        Button(action: onToggle) {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? Design.primaryColor : Color.secondary)
+                    .accessibilityHidden(true)
 
-                if isSelected || isPreviousSelected {
-                    Circle()
-                        .fill(circleColor)
-                        .frame(width: selectionCircleSize, height: selectionCircleSize)
-
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-            }
-            .frame(width: selectionIconSlotSize, height: selectionIconSlotSize)
-
-            Text(tagName)
-                .font(.callout)
-                .foregroundStyle(Color(.label))
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            Spacer(minLength: 8)
-
-            if !markers.isEmpty {
-                HStack(spacing: 6) {
+                let layout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+                    : AnyLayout(HStackLayout(spacing: 8))
+                layout {
+                    Text(tagName)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     ForEach(markers) { marker in
                         TagRowMarkerBadge(marker: marker)
                     }
                 }
-                .fixedSize(horizontal: true, vertical: false)
             }
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onToggle()
-        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(tagName)
+        .accessibilityValue(isSelected ? "已选择" : "未选择")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint(markers.contains(.aiRecommended) ? "AI 推荐标签" : "轻点更改选择")
         .contextMenu {
-            if let onEdit = onEdit {
-                Button(action: onEdit) {
-                    Label("编辑", systemImage: "pencil")
-                }
+            if let onEdit {
+                Button("重命名标签", systemImage: "pencil", action: onEdit)
             }
         }
-        .accessibilityAddTraits(.isButton)
+        .accessibilityActions {
+            if let onEdit { Button("重命名标签", action: onEdit) }
+        }
     }
 }
 
@@ -419,15 +306,13 @@ struct TagRowMarkerBadge: View {
     let marker: TagRowMarker
 
     var body: some View {
-        Text(marker.rawValue)
-            .font(.caption2.weight(.semibold))
+        Label(marker.rawValue, systemImage: marker == .aiRecommended ? "sparkles" : "clock")
+            .font(.caption)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(marker.tintColor.opacity(0.12))
-            )
-            .foregroundStyle(marker.tintColor)
+            .background(Color(.tertiarySystemFill), in: Capsule())
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -439,128 +324,98 @@ struct TagEditSheet: View {
     let tagName: String
     var onSave: ((String) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
-    @State private var newTagName: String = ""
-    @State private var hapticTrigger = 0
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var newTagName = ""
     @FocusState private var isInputFocused: Bool
-    
+
+    private var trimmedName: String { newTagName.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                TextField("标签名称", text: $newTagName)
-                    .font(.body)
-                    .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.regularMaterial)
-                    )
-                    .padding(.horizontal, 16)
-                    .focused($isInputFocused)
-                
-                Spacer()
+            Form {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("标签名称").font(.subheadline).foregroundStyle(.secondary)
+                        TextField("输入标签名称", text: $newTagName)
+                            .focused($isInputFocused)
+                            .submitLabel(.done)
+                            .onSubmit { saveTag() }
+                            .accessibilityLabel("标签名称")
+                    }
+                } footer: {
+                    Text(TagManager.shared.tags.contains(trimmedName) && trimmedName != tagName
+                         ? "保存后，使用此标签的记录会合并到已有的“\(trimmedName)”标签。"
+                         : "重命名会更新所有使用此标签的记录。")
+                }
             }
-            .padding(.top, 20)
-            .background(
-                Color(.systemGroupedBackground)
-                    .ignoresSafeArea()
-            )
-            .navigationTitle("编辑标签")
+            .navigationTitle("重命名标签")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") {
-                        dismiss()
-                    }
-                }
-                
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("保存") {
-                        saveTag()
-                    }
-                    .fontWeight(.semibold)
-                    .disabled(newTagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存", action: saveTag)
+                        .fontWeight(.semibold)
+                        .disabled(trimmedName.isEmpty || trimmedName == tagName)
                 }
             }
-            .onAppear {
-                newTagName = tagName
-                isInputFocused = true
-            }
-        .sensoryFeedback(.impact(weight: .medium), trigger: hapticTrigger)
+            .onAppear { newTagName = tagName; isInputFocused = true }
         }
-        .presentationDetents([.height(200)])
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
     }
-    
+
     private func saveTag() {
-        hapticTrigger += 1
-        
-        let trimmedName = newTagName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let onSave = onSave {
-            onSave(trimmedName)
-        } else {
-            HistoryManager.shared.renameTag(from: tagName, to: trimmedName)
-        }
+        guard !trimmedName.isEmpty, trimmedName != tagName else { return }
+        if let onSave { onSave(trimmedName) }
+        else { HistoryManager.shared.renameTag(from: tagName, to: trimmedName) }
         dismiss()
     }
 }
 
 struct TagCreateSheet: View {
-    let itemId: UUID
-    @State private var historyManager = HistoryManager.shared
+    let onCreate: (String) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var tagName: String = ""
-    @State private var hapticTrigger = 0
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var tagName = ""
     @FocusState private var isInputFocused: Bool
-    
+
+    private var trimmedName: String { tagName.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                TextField("标签名称", text: $tagName)
-                    .font(.body)
-                    .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.regularMaterial)
-                    )
-                    .padding(.horizontal, 16)
-                    .focused($isInputFocused)
-                
-                Spacer()
+            Form {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("标签名称").font(.subheadline).foregroundStyle(.secondary)
+                        TextField("例如：灵感", text: $tagName)
+                            .focused($isInputFocused)
+                            .submitLabel(.done)
+                            .onSubmit { addTag() }
+                            .accessibilityLabel("标签名称")
+                    }
+                } footer: {
+                    Text("添加后会自动选中这个标签。")
+                }
             }
-            .padding(.top, 20)
-            .background(
-                Color(.systemGroupedBackground)
-                    .ignoresSafeArea()
-            )
             .navigationTitle("新建标签")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") {
-                        dismiss()
-                    }
-                }
-                
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("添加") {
-                        addTag()
-                    }
-                    .fontWeight(.semibold)
-                    .disabled(tagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("添加", action: addTag)
+                        .fontWeight(.semibold)
+                        .disabled(trimmedName.isEmpty)
                 }
             }
-            .onAppear {
-                isInputFocused = true
-            }
-        .sensoryFeedback(.impact(weight: .medium), trigger: hapticTrigger)
+            .onAppear { isInputFocused = true }
         }
-        .presentationDetents([.height(200)])
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
     }
-    
+
     private func addTag() {
-        hapticTrigger += 1
-        
-        historyManager.addTag(to: itemId, tagName: tagName)
+        guard !trimmedName.isEmpty else { return }
+        onCreate(trimmedName)
         dismiss()
     }
 }
@@ -598,6 +453,10 @@ nonisolated struct TagSelection: Equatable, Sendable {
 }
 
 struct TagFilterBar: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .subheadline) private var filterTextHeight = 20.0
+    private var filterRowHeight: Double { max(44, filterTextHeight + 16) + 16 }
+
     @Binding var selectedTags: [TagSelection]
     @Binding var isRandomMode: Bool
     var availableItems: [HistoryItem]
@@ -608,7 +467,6 @@ struct TagFilterBar: View {
     var onRandomize: () -> Void
     
     @State private var tagManager = TagManager.shared
-    let historyManager = HistoryManager.shared
     
     private func computeAvailableTagsFromItems() -> Set<String> {
         var tags = Set<String>()
@@ -634,7 +492,8 @@ struct TagFilterBar: View {
         if availableTagsFromItems.isEmpty {
             EmptyView()
         } else {
-            VStack(spacing: 0) {
+            ScrollView(.vertical) {
+              VStack(spacing: 0) {
                 ForEach(0...selectedTags.count, id: \.self) { level in
                     let filteredItemCount = getFilteredItemCount(at: level)
                     let availableTagsWithCounts = getAvailableTagsWithCounts(at: level, availableTagsFromItems: availableTagsFromItems)
@@ -653,9 +512,8 @@ struct TagFilterBar: View {
                                 if level == 0 {
                                     let noTagCount = getNoTagCount(at: level)
                                     if noTagCount > 0 {
-                                        FilterIconChipWithState(
-                                            systemImage: "tag.slash",
-                                            accessibilityLabel: "无标签",
+                                        FilterChip(
+                                            title: "无标签",
                                             selectionState: selectionState(for: TagSelection.noTagIdentifier, at: level)
                                         ) {
                                             handleTagTap(TagSelection.noTagIdentifier, at: level)
@@ -688,7 +546,9 @@ struct TagFilterBar: View {
                         .scrollIndicators(.hidden)
                     }
                 }
+              }
             }
+            .frame(height: min(filterRowHeight * Double(selectedTags.count + 1), dynamicTypeSize.isAccessibilitySize ? 110 : 180))
         }
     }
     
@@ -831,37 +691,30 @@ struct FilterChip: View {
     var selectionState: TagSelectionState? = nil
     var count: Int? = nil
     let action: () -> Void
-    
-    private var isSelected: Bool { selectionState != nil }
-    private var isNegative: Bool { selectionState == .negative }
-    
-    private var activeColor: Color {
-        isNegative ? Design.negativeColor : Design.primaryColor
-    }
-    
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.footnote)
-                    .strikethrough(isNegative, color: Design.negativeColor)
-                
-                if let count = count {
-                    Text("\(count)")
-                        .font(.caption)
-                        .foregroundStyle(isSelected ? activeColor.opacity(0.7) : Color(.tertiaryLabel))
+            HStack(spacing: 6) {
+                if let selectionState {
+                    Image(systemName: selectionState == .positive ? "checkmark" : "minus.circle")
+                        .foregroundStyle(selectionState == .negative ? Design.negativeColor : Design.primaryColor)
                 }
+                Text(title)
+                if let count { Text(count.formatted()).foregroundStyle(.secondary) }
             }
+            .font(.subheadline)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                Capsule()
-                    .fill(isSelected ? activeColor.opacity(0.15) : Color(.tertiarySystemFill))
-            )
-            .foregroundStyle(isSelected ? activeColor : Color(.secondaryLabel))
+            .frame(minWidth: 44, minHeight: 44)
+            .background(selectionState == nil ? Color(.tertiarySystemFill) : Design.primaryColor.opacity(0.10), in: Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .animation(.none, value: selectionState)
+        .accessibilityLabel(title)
+        .accessibilityValue(selectionState == .positive ? "已包含" : (selectionState == .negative ? "已排除" : "未筛选"))
+        .accessibilityAddTraits(selectionState != nil ? .isSelected : [])
+        .accessibilityHint(title == "全部" ? "清除此级筛选" : "依次切换包含、排除和取消筛选")
     }
 }
 
@@ -873,91 +726,25 @@ struct FilterIconChip: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: {
-            if usesDiceHaptics {
-                playDiceHaptics()
-            }
+        Button {
+            if usesDiceHaptics { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
             action()
-        }) {
+        } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .medium))
-                .frame(height: 16)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .fill(isSelected ? Design.primaryColor.opacity(0.15) : Color(.tertiarySystemFill))
-                )
-                .foregroundStyle(isSelected ? Design.primaryColor : Color(.secondaryLabel))
+                .font(.body)
+                .frame(minWidth: 44, minHeight: 44)
+                .foregroundStyle(isSelected ? Design.primaryColor : Color.primary)
+                .background(isSelected ? Design.primaryColor.opacity(0.10) : Color(.tertiarySystemFill), in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
-        .animation(.none, value: isSelected)
-    }
-    
-    private func playDiceHaptics() {
-        Task { @MainActor in
-            let generator = UIImpactFeedbackGenerator(style: .rigid)
-            generator.prepare()
-            
-            let steps: [(delay: Duration, intensity: CGFloat)] = [
-                (.zero, 0.90),
-                (.milliseconds(60), 0.55),
-                (.milliseconds(60), 0.75),
-                (.milliseconds(60), 0.50),
-                (.milliseconds(60), 0.70),
-                (.milliseconds(60), 0.45)
-            ]
-            
-            for step in steps {
-                if step.delay > .zero {
-                    try? await Task.sleep(for: step.delay)
-                }
-                generator.impactOccurred(intensity: step.intensity)
-            }
-        }
-    }
-}
-
-struct FilterIconChipWithState: View {
-    let systemImage: String
-    let accessibilityLabel: String
-    let selectionState: TagSelectionState?
-    let action: () -> Void
-    
-    private var isSelected: Bool { selectionState != nil }
-    private var isNegative: Bool { selectionState == .negative }
-    
-    private var activeColor: Color {
-        isNegative ? Design.negativeColor : Design.primaryColor
-    }
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .medium))
-                .frame(height: 16)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .fill(isSelected ? activeColor.opacity(0.15) : Color(.tertiarySystemFill))
-                )
-                .foregroundStyle(isSelected ? activeColor : Color(.secondaryLabel))
-                .overlay(
-                    isNegative ? 
-                        Capsule()
-                            .stroke(Design.negativeColor.opacity(0.3), lineWidth: 1)
-                        : nil
-                )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-        .animation(.none, value: selectionState)
+        .accessibilityValue(isSelected ? "已开启" : "未开启")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
 struct BatchTagPickerView: View {
+    @State private var didInitialize = false
     let itemIds: Set<UUID>
     
     @State private var historyManager = HistoryManager.shared
@@ -996,7 +783,7 @@ struct BatchTagPickerView: View {
             } else if count == items.count {
                 states[tag] = true
             } else {
-                states[tag] = nil
+                states[tag] = .some(nil)
             }
         }
         return states
@@ -1009,115 +796,81 @@ struct BatchTagPickerView: View {
             let order1 = s1 == true ? 0 : (s1 == nil ? 1 : 2)
             let order2 = s2 == true ? 0 : (s2 == nil ? 1 : 2)
             if order1 != order2 { return order1 < order2 }
-            return tagManager.count(for: tag1) > tagManager.count(for: tag2)
+            let count1 = tagManager.count(for: tag1)
+            let count2 = tagManager.count(for: tag2)
+            if count1 != count2 { return count1 > count2 }
+            return tag1.localizedStandardCompare(tag2) == .orderedAscending
         }
     }
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if tagManager.tags.isEmpty {
-                    VStack(spacing: 12) {
-                        Text("还没有标签，试试创建一个")
-                            .font(.subheadline)
-                            .foregroundStyle(Color(.secondaryLabel))
-
-                        if canCreateTagFromSearch {
-                            Button(action: createTagFromSearch) {
-                                Label("新增标签 \"\(trimmedSearchText)\"", systemImage: "plus.circle.fill")
-                                    .font(.callout.weight(.medium))
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Design.primaryColor)
-                            .padding(.horizontal, 16)
+            List {
+                if displayedTags.isEmpty {
+                    ContentUnavailableView {
+                        Label(trimmedSearchText.isEmpty ? "还没有标签" : "没有匹配的标签", systemImage: "tag")
+                    } description: {
+                        Text("为所选的 \(itemIds.count) 条记录添加标签。")
+                    } actions: {
+                        Button(canCreateTagFromSearch ? "创建“\(trimmedSearchText)”" : "新建标签") {
+                            if canCreateTagFromSearch { createTagFromSearch() } else { showCreateTag = true }
                         }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 60)
-                    Spacer()
+                    .listRowBackground(Color.clear)
                 } else {
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            if displayedTags.isEmpty {
-                                VStack(spacing: 12) {
-                                    Text("没有匹配的标签")
-                                        .font(.subheadline)
-                                        .foregroundStyle(Color(.secondaryLabel))
-
-                                    if canCreateTagFromSearch {
-                                        Button(action: createTagFromSearch) {
-                                            Label("新增标签 \"\(trimmedSearchText)\"", systemImage: "plus.circle.fill")
-                                                .font(.callout.weight(.medium))
-                                                .frame(maxWidth: .infinity)
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        .tint(Design.primaryColor)
-                                        .padding(.horizontal, 16)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 60)
-                            } else {
-                                ForEach(displayedTags.indices, id: \.self) { index in
-                                    let tagName = displayedTags[index]
-                                    let state = tagStates[tagName] ?? nil
-                                    
-                                    BatchTagRowView(
-                                        tagName: tagName,
-                                        state: state,
-                                        onToggle: { toggleTag(tagName) }
-                                    )
-                                    
-                                    if index != displayedTags.count - 1 {
-                                        Divider().padding(.leading, 52)
-                                    }
-                                }
+                    Section {
+                        ForEach(displayedTags, id: \.self) { tagName in
+                            BatchTagRowView(tagName: tagName, state: tagStates[tagName] ?? nil) {
+                                toggleTag(tagName)
                             }
                         }
-                        .padding(.top, 16)
+                    } footer: {
+                        Text("更改会应用于所选的 \(itemIds.count) 条记录。减号表示部分记录已使用此标签。")
                     }
-                    Spacer()
                 }
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("标签 · \(itemIds.count) 条记录")
+            .listStyle(.insetGrouped)
+            .navigationTitle("批量标签")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索标签")
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索或创建标签")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(action: { showCreateTag = true }) {
-                        Image(systemName: "plus")
-                    }
+                    Button("新建标签", systemImage: "plus") { showCreateTag = true }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") { dismiss() }
-                        .fontWeight(.semibold)
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }.fontWeight(.semibold)
                 }
             }
-            .sheet(isPresented: $showCreateTag, onDismiss: {
-                let newStates = computeTagStates()
-                for tag in tagManager.tags where !frozenSortedTags.contains(tag) {
-                    frozenSortedTags.insert(tag, at: 0)
-                    tagStates[tag] = newStates[tag] ?? false
-                    initialTagStates[tag] = newStates[tag] ?? false
+            .sheet(isPresented: $showCreateTag) {
+                TagCreateSheet { name in
+                    addLocalTag(name)
                 }
-            }) {
-                TagCreateSheet(itemId: itemIds.first ?? UUID())
             }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear {
+            guard !didInitialize else { return }
+            didInitialize = true
             tagStates = computeTagStates()
             initialTagStates = tagStates
             frozenSortedTags = computeSortedTags()
         }
         .onDisappear {
             applyChanges()
+            initialTagStates = tagStates
         }
     }
-    
+
+    private func addLocalTag(_ name: String) {
+        locallyCreatedTags.insert(name)
+        tagStates[name] = true
+        if initialTagStates[name] == nil { initialTagStates[name] = false }
+        frozenSortedTags = computeSortedTags()
+        searchText = ""
+    }
+
     private func toggleTag(_ tagName: String) {
         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
             let current = tagStates[tagName] ?? nil
@@ -1133,17 +886,10 @@ struct BatchTagPickerView: View {
     }
 
     private func createTagFromSearch() {
-        let newTag = trimmedSearchText
-        guard !newTag.isEmpty else { return }
-
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-            locallyCreatedTags.insert(newTag)
-            tagStates[newTag] = true
-            initialTagStates[newTag] = false
-            frozenSortedTags = computeSortedTags()
-        }
+        guard !trimmedSearchText.isEmpty else { return }
+        addLocalTag(trimmedSearchText)
     }
-    
+
     private func applyChanges() {
         for (tag, newState) in tagStates {
             let oldState = initialTagStates[tag] ?? false
@@ -1165,50 +911,25 @@ struct BatchTagRowView: View {
     let tagName: String
     let state: Bool?
     let onToggle: () -> Void
-    
-    private var circleColor: Color {
-        switch state {
-        case true: return Design.primaryColor
-        case nil: return Design.primaryColor.opacity(0.5)
-        default: return Color(.secondaryLabel)
-        }
-    }
-    
+
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .stroke(circleColor, lineWidth: 2)
-                    .frame(width: 24, height: 24)
-                
-                if state == true {
-                    Circle()
-                        .fill(circleColor)
-                        .frame(width: 24, height: 24)
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
-                } else if state == nil {
-                    Circle()
-                        .fill(circleColor)
-                        .frame(width: 24, height: 24)
-                    Image(systemName: "minus")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
-                }
+        Button(action: onToggle) {
+            HStack(spacing: 12) {
+                Image(systemName: state == true ? "checkmark.circle.fill" : (state == nil ? "minus.circle.fill" : "circle"))
+                    .font(.title3)
+                    .foregroundStyle(state == false ? Color.secondary : Design.primaryColor)
+                    .accessibilityHidden(true)
+                Text(tagName).font(.body).foregroundStyle(.primary)
+                Spacer(minLength: 0)
             }
-            
-            Text(tagName)
-                .font(.callout)
-                .foregroundStyle(Color(.label))
-            
-            Spacer()
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .contentShape(Rectangle())
-        .onTapGesture { onToggle() }
-        .accessibilityAddTraits(.isButton)
+        .buttonStyle(.plain)
+        .accessibilityLabel(tagName)
+        .accessibilityValue(state == true ? "全部记录已选择" : (state == nil ? "部分记录已选择" : "未选择"))
+        .accessibilityAddTraits(state == true ? .isSelected : [])
     }
 }
 

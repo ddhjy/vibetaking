@@ -5,12 +5,7 @@ struct DebugView: View {
     
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    Text("调试选项为空")
-                        .foregroundStyle(.secondary)
-                }
-            }
+            ContentUnavailableView("暂无调试选项", systemImage: "wrench.and.screwdriver", description: Text("当前版本没有可调整的调试选项。"))
             .navigationTitle("调试模式")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

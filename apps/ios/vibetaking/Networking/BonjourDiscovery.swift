@@ -90,7 +90,8 @@ final class DeviceDiscoveryManager {
 enum HTTPTargetURL {
     static func make(host: String, port: Int, path: String = "/") -> URL? {
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedHost.isEmpty, (1 ... 65_535).contains(port) else { return nil }
+        guard !trimmedHost.isEmpty, (1 ... 65_535).contains(port),
+              !trimmedHost.contains(where: { $0.isWhitespace || "/?#@".contains($0) }) else { return nil }
 
         var hostPart = trimmedHost
         if let zoneIndex = hostPart.firstIndex(of: "%") {

@@ -17,7 +17,7 @@ enum WorkflowNodeType: String, Codable, CaseIterable {
     var displayName: String {
         switch self {
         case .aiProcess: "AI 处理"
-        case .agentProcess: "Agent 处理"
+        case .agentProcess: "AI 助手"
         case .copyToClipboard: "复制"
         case .save: "保存记录"
         case .httpPost: "HTTP 发送"
@@ -73,6 +73,26 @@ struct Workflow: Identifiable, Codable, Equatable {
     var isActive: Bool
     var syncConfig: SyncConfig
     var nodes: [WorkflowNode]
+
+    /// Validate before consuming the draft so an unfinished workflow cannot discard input.
+    var configurationIssue: String? {
+        let enabledNodes = nodes.filter(\.isEnabled)
+        guard !enabledNodes.isEmpty else {
+            return "“\(name)”还没有启用的步骤。请在工作流设置中添加并启用步骤后重试。"
+        }
+        for node in enabledNodes {
+            let prompt: String?
+            switch node.type {
+            case .aiProcess: prompt = node.config.aiPrompt
+            case .agentProcess: prompt = node.config.agentPrompt
+            default: continue
+            }
+            if prompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+                return "请先在“\(name)”中填写“\(node.type.displayName)”步骤的指令。草稿已保留。"
+            }
+        }
+        return nil
+    }
 
     struct SyncConfig: Codable, Equatable {
         var host: String
@@ -401,6 +421,11 @@ class WorkflowManager {
             )
         }
         
+        if let issue = workflow.configurationIssue {
+            throw NSError(domain: "WorkflowManager", code: -4,
+                          userInfo: [NSLocalizedDescriptionKey: issue])
+        }
+
         isExecuting = true
         currentNodeIndex = 0
         executionError = nil

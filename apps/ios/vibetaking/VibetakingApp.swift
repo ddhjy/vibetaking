@@ -9,6 +9,7 @@ struct VibetakingApp: App {
         WindowGroup {
             ContentView()
                 .id(demoMode.isEnabled)
+                .modifier(AppAppearance())
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {

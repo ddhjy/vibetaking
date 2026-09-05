@@ -39,7 +39,6 @@ struct HistoryView: View {
     @State private var historyManager = HistoryManager.shared
     @State private var showClearConfirmation = false
     @State private var copiedItemId: UUID?
-    @State private var appearAnimation = false
     @State private var isEditMode = false
     @State private var selectedItems: Set<UUID> = []
     @State private var selectedTags: [TagSelection] = []
@@ -57,7 +56,7 @@ struct HistoryView: View {
     @State private var showStatistics = false
     @State private var showBatchTagPicker = false
     @State private var isRandomMode = false
-    @State private var randomScrollTargetId: UUID? = nil
+    @State private var listProjectionID = UUID()
     @State private var listCache = HistoryListCache()
     @State private var showBatchCopiedToast = false
     @State private var batchCopiedCount: Int = 0
@@ -149,7 +148,7 @@ struct HistoryView: View {
             
             let displayedItems: [HistoryItem]
             if isRandomMode {
-                displayedItems = filteredItems.sorted { $0.createdAt < $1.createdAt }
+                displayedItems = filteredItems.shuffled()
             } else {
                 displayedItems = filteredItems
             }
@@ -256,7 +255,7 @@ struct HistoryView: View {
 
         let displayedItems: [HistoryItem]
         if isRandomMode {
-            displayedItems = filteredItems.sorted { $0.createdAt < $1.createdAt }
+            displayedItems = filteredItems.shuffled()
         } else {
             displayedItems = filteredItems
         }
@@ -265,11 +264,17 @@ struct HistoryView: View {
         cache.filteredItems = filteredItems
         cache.displayedItems = displayedItems
         listCache = cache
+        listProjectionID = UUID()
+        if isRebuildingCache {
+            // Refresh the in-flight search with the latest filter instead of letting
+            // an older query result replace the new projection.
+            rebuildListCacheAsync()
+        }
     }
     
     var body: some View {
         ZStack {
-            Color(.secondarySystemBackground)
+            Color(.systemGroupedBackground)
                 .ignoresSafeArea()
             
             if (historyManager.isLoading || isRebuildingCache) && listCache.savedItems.isEmpty {
@@ -295,7 +300,7 @@ struct HistoryView: View {
                     .background(.regularMaterial, in: Capsule())
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(999)
+                    .accessibilityLabel("已复制 \(batchCopiedCount) 条记录")
             }
         }
         .background {
@@ -303,8 +308,8 @@ struct HistoryView: View {
                 handleShake()
             }
         }
-        .navigationTitle("随心记")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(isEditMode ? "已选择 \(selectedItems.count) 条" : "记录")
+        .navigationBarTitleDisplayMode(isEditMode ? .inline : .large)
         .toolbar {
             ToolbarItem(id: AppToolbarIdentity.moreButton, placement: .topBarTrailing) {
                 if isEditMode && !listCache.savedItems.isEmpty {
@@ -314,8 +319,7 @@ struct HistoryView: View {
                             selectedItems.removeAll()
                         }
                     }) {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 17, weight: .regular))
+                        Text("完成").fontWeight(.semibold)
                     }
                 } else {
                     Menu {
@@ -332,9 +336,11 @@ struct HistoryView: View {
                                     isEditMode = true
                                 }
                             }) {
-                                Label("编辑", systemImage: "pencil")
+                                Label("选择记录", systemImage: "checkmark.circle")
                             }
                             
+                            Button("随机回顾", systemImage: "shuffle") { randomizeDisplayOrder() }
+
                             Button(action: { showStatistics = true }) {
                                 Label("统计", systemImage: "chart.bar")
                             }
@@ -353,42 +359,45 @@ struct HistoryView: View {
             }
             
             ToolbarItemGroup(placement: .bottomBar) {
-                if isEditMode && !selectedItems.isEmpty {
+                if isEditMode {
+                    let selectableIDs = Set(listCache.filteredItems.filter { !$0.isDownloading }.map(\.id))
+                    let allSelected = !selectableIDs.isEmpty && selectableIDs.isSubset(of: selectedItems)
                     Button(action: {
-                        if selectedItems.count == listCache.filteredItems.count {
+                        if allSelected {
                             selectedItems.removeAll()
                         } else {
-                            selectedItems = Set(listCache.filteredItems.map { $0.id })
+                            selectedItems = selectableIDs
                         }
                     }) {
-                        Text(selectedItems.count == listCache.filteredItems.count ? "取消全选" : "全选")
+                        Text(allSelected ? "取消全选" : "全选")
                             .font(.body)
                     }
                     .tint(Design.primaryColor)
+                    .disabled(selectableIDs.isEmpty)
                     
                     Spacer()
                     
                     Button(action: copySelectedItems) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 20))
+                        Label("复制所选记录", systemImage: "doc.on.doc").labelStyle(.iconOnly)
                     }
                     .tint(Design.primaryColor)
-                    
+                    .disabled(selectedItems.isEmpty)
+
                     Button(action: { showBatchTagPicker = true }) {
-                        Image(systemName: "tag")
-                            .font(.system(size: 20))
+                        Label("批量标签", systemImage: "tag").labelStyle(.iconOnly)
                     }
                     .tint(Design.primaryColor)
-                    
+                    .disabled(selectedItems.isEmpty)
+
                     Button(action: { showClearConfirmation = true }) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 20))
+                        Label("删除所选记录", systemImage: "trash").labelStyle(.iconOnly)
                     }
                     .tint(Color(.systemRed))
+                    .disabled(selectedItems.isEmpty)
                 }
             }
         }
-        .toolbarBackgroundVisibility(.visible, for: .bottomBar)
+        .toolbar(isEditMode ? .visible : .hidden, for: .bottomBar)
         .onChange(of: isRandomMode) { _, _ in
             applyListProjectionImmediately()
         }
@@ -399,6 +408,7 @@ struct HistoryView: View {
             rebuildListCacheAsync()
         }
         .onChange(of: historyManager.items) { _, _ in
+            selectedItems.formIntersection(Set(historyManager.savedItems.map(\.id)))
             rebuildListCacheAsync()
         }
         .alert("删除这 \(selectedItems.count) 条记录？", isPresented: $showClearConfirmation) {
@@ -449,9 +459,7 @@ struct HistoryView: View {
                 historyManager.loadItemsIfNeeded()
             }
             rebuildListCacheAsync()
-            withAnimation(.easeOut(duration: 0.4)) {
-                appearAnimation = true
-            }
+
         }
     }
     
@@ -473,7 +481,7 @@ struct HistoryView: View {
                 exportedFileURL = url
             } catch {
                 isExporting = false
-                print("Export failed: \(error)")
+                importAlert = ImportAlert(title: "导出失败", message: error.localizedDescription)
             }
         }
     }
@@ -546,15 +554,11 @@ struct HistoryView: View {
     private func randomizeDisplayOrder() {
         isRandomMode = true
         applyListProjectionImmediately()
-        if !listCache.displayedItems.isEmpty {
-            let randomIndex = Int.random(in: 0..<listCache.displayedItems.count)
-            randomScrollTargetId = listCache.displayedItems[randomIndex].id
-        }
     }
     
     private func handleShake() {
-        guard !listCache.savedItems.isEmpty else { return }
-        
+        guard !listCache.savedItems.isEmpty, !isEditMode, !isSearchActive else { return }
+
         playDiceHaptics()
         
         if !selectedTags.isEmpty {
@@ -564,28 +568,9 @@ struct HistoryView: View {
     }
     
     private func playDiceHaptics() {
-        Task { @MainActor in
-            let generator = UIImpactFeedbackGenerator(style: .rigid)
-            generator.prepare()
-            
-            let steps: [(delay: Duration, intensity: CGFloat)] = [
-                (.zero, 0.90),
-                (.milliseconds(60), 0.55),
-                (.milliseconds(60), 0.75),
-                (.milliseconds(60), 0.50),
-                (.milliseconds(60), 0.70),
-                (.milliseconds(60), 0.45)
-            ]
-            
-            for step in steps {
-                if step.delay > .zero {
-                    try? await Task.sleep(for: step.delay)
-                }
-                generator.impactOccurred(intensity: step.intensity)
-            }
-        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
-    
+
     @ViewBuilder
     private var historyContent: some View {
         Group {
@@ -649,140 +634,80 @@ struct HistoryView: View {
                 .font(.footnote)
             Spacer(minLength: 0)
         }
-        .foregroundStyle(.orange)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.12))
+        .background(Color(.secondarySystemGroupedBackground))
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 20) {
-            ZStack {
-                Circle()
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 100, height: 100)
-                
-                Image(systemName: historyManager.isUsingLocalFallback ? "icloud.slash" : "rectangle.stack")
-                    .font(.system(size: 40, weight: .light))
-                    .foregroundStyle(Color(.secondaryLabel))
-            }
-            .opacity(appearAnimation ? 1 : 0)
-            .scaleEffect(appearAnimation ? 1 : 0.8)
-            
-            VStack(spacing: 8) {
-                Text(historyManager.isUsingLocalFallback ? "云端记录暂时无法加载" : "还没有记录")
-                    .font(.title3.bold())
-                    .foregroundStyle(Color(.label))
-                
-                Text(historyManager.isUsingLocalFallback ? "网络或 iCloud 恢复后会自动显示" : "回到主页写下想法，它会自动保存在这里")
-                    .font(.subheadline)
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .multilineTextAlignment(.center)
-            }
-            .opacity(appearAnimation ? 1 : 0)
-            .offset(y: appearAnimation ? 0 : 10)
-            
-            Button(action: { showImportPicker = true }) {
-                Label("从文件导入", systemImage: "square.and.arrow.down")
-                    .font(.callout.weight(.semibold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Design.primaryColor)
-            .disabled(isImporting || historyManager.isLoading)
-            .opacity(appearAnimation ? 1 : 0)
+        ContentUnavailableView {
+            Label(historyManager.isUsingLocalFallback ? "暂无本地记录" : "还没有记录", systemImage: "rectangle.stack")
+        } description: {
+            Text(historyManager.isUsingLocalFallback
+                 ? "可以继续记录。iCloud 恢复后，云端记录会自动加载。"
+                 : "写下想法后，运行包含“保存记录”步骤的工作流，即可在这里回顾。")
+        } actions: {
+            Button("开始记录") { dismiss() }.buttonStyle(.borderedProminent)
+            Button("从文件导入", systemImage: "square.and.arrow.down") { showImportPicker = true }
+                .buttonStyle(.bordered)
+                .disabled(isImporting || historyManager.isLoading)
         }
-        .padding(.horizontal, 40)
     }
-    
+
     private var filteredEmptyStateView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "tag.slash")
-                .font(.system(size: 40, weight: .light))
-                .foregroundStyle(Color(.tertiaryLabel))
-            
-            Text("没有匹配的记录")
-                .font(.callout)
-                .foregroundStyle(Color(.secondaryLabel))
+        ContentUnavailableView {
+            Label("没有匹配的记录", systemImage: "line.3.horizontal.decrease.circle")
+        } description: {
+            Text("试试减少筛选条件。")
+        } actions: {
+            Button("清除筛选") { selectedTags = [] }.buttonStyle(.bordered)
         }
-        .frame(maxHeight: .infinity)
     }
-    
+
     private var searchEmptyStateView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 40, weight: .light))
-                .foregroundStyle(Color(.tertiaryLabel))
-            
-            Text("没有找到「\(effectiveSearchText)」的结果")
-                .font(.callout)
-                .foregroundStyle(Color(.secondaryLabel))
+        ContentUnavailableView {
+            Label("没有搜索结果", systemImage: "magnifyingglass")
+        } description: {
+            Text("没有找到“\(effectiveSearchText)”的相关记录。试试其他关键词或清除筛选。")
+        } actions: {
+            Button("清除搜索与筛选") {
+                searchText = ""
+                committedSearchText = ""
+                selectedTags = []
+            }
+            .buttonStyle(.bordered)
         }
-        .frame(maxHeight: .infinity)
     }
-    
+
     private var historyList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 0) {
-                    Color.clear
-                        .frame(height: 0)
-                        .id("ListTopAnchor")
-                    
-                    LazyVStack(spacing: 12) {
-                        ForEach(listCache.displayedItems) { item in
-                            HistoryRowView(
-                                item: item,
-                                isCopied: copiedItemId == item.id,
-                                isEditMode: isEditMode,
-                                isSelected: selectedItems.contains(item.id),
-                                filteredTags: selectedTags.filter { $0.state == .positive }.map { $0.tag },
-                                searchText: effectiveSearchText,
-                                onCopy: { copyItem(item) },
-                                onToggleSelection: { toggleSelection(item) },
-                                onTagTap: {
-                                    if !item.isDownloading {
-                                        tagPickerItem = item
-                                    }
-                                },
-                                onEdit: {
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                        isEditMode = true
-                                        selectedItems.insert(item.id)
-                                    }
-                                },
-                                onDelete: {
-                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                        historyManager.deleteRecord(item)
-                                    }
-                                }
-                            )
-                            .id(item.id)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                }
-            }
-            .scrollIndicators(.automatic)
-            .onChange(of: selectedTags) { _, _ in
-                Task { @MainActor in
-                    proxy.scrollTo("ListTopAnchor", anchor: .top)
-                }
-            }
-            .onChange(of: randomScrollTargetId) { _, newValue in
-                if let targetId = newValue {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        proxy.scrollTo(targetId, anchor: .center)
-                    }
-                }
+        List {
+            ForEach(listCache.displayedItems) { item in
+                HistoryRowView(
+                    item: item,
+                    isCopied: copiedItemId == item.id,
+                    isEditMode: isEditMode,
+                    isSelected: selectedItems.contains(item.id),
+                    filteredTags: selectedTags.filter { $0.state == .positive }.map { $0.tag },
+                    searchText: effectiveSearchText,
+                    onCopy: { copyItem(item) },
+                    onToggleSelection: { toggleSelection(item) },
+                    onTagTap: { if !item.isDownloading { tagPickerItem = item } },
+                    onEdit: { isEditMode = true; selectedItems.insert(item.id) },
+                    onDelete: { historyManager.deleteRecord(item) }
+                )
+                .id(item.id)
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.interactively)
+        .id(listProjectionID)
     }
-    
+
     private func toggleSelection(_ item: HistoryItem) {
+        guard !item.isDownloading else { return }
         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
             if selectedItems.contains(item.id) {
                 selectedItems.remove(item.id)
@@ -827,6 +752,7 @@ struct HistoryView: View {
     
     private func showBatchCopiedToast(count: Int) {
         batchCopiedCount = count
+        UIAccessibility.post(notification: .announcement, argument: "已复制 \(count) 条记录")
         
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
             showBatchCopiedToast = true
@@ -846,6 +772,7 @@ struct HistoryView: View {
         mediumHapticTrigger += 1
         
         UIPasteboard.general.string = item.text
+        UIAccessibility.post(notification: .announcement, argument: "已复制记录")
         
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             copiedItemId = item.id
@@ -901,207 +828,123 @@ struct HistoryRowView: View {
     let isEditMode: Bool
     let isSelected: Bool
     var filteredTags: [String] = []
-    var searchText: String = ""
+    var searchText = ""
     let onCopy: () -> Void
     let onToggleSelection: () -> Void
     let onTagTap: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 14) {
-            if isEditMode {
-                ZStack {
-                    Circle()
-                        .stroke(
-                            isSelected ? Design.primaryColor : Color(.quaternaryLabel),
-                            lineWidth: 1.5
-                        )
-                        .frame(width: 24, height: 24)
-                    
-                                    if isSelected {
-                                        Circle()
-                                            .fill(Design.primaryColor)
-                                            .frame(width: 24, height: 24)
-                        
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                }
-                .transition(.scale.combined(with: .opacity))
-            }
-            
-            VStack(alignment: .leading, spacing: 8) {
-                if item.isDownloading && item.text.isEmpty {
-                    HStack(spacing: 8) {
-                        Image(systemName: "icloud.and.arrow.down")
-                            .font(.body)
-                        Text("正在从 iCloud 下载")
-                            .font(.body)
-                    }
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    highlightedText(item.preview, searchText: searchText)
-                        .font(.body)
-                        .foregroundStyle(Color(.label))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                    
-                    Divider()
-                    
-                    HStack(spacing: 8) {
-                        Text(item.formattedDate)
-                            .font(.caption)
-                            .foregroundStyle(Color(.secondaryLabel))
+    @State private var isExpanded = false
+    @State private var showDeleteConfirmation = false
 
-                        if item.isDownloading {
-                            ProgressView()
-                                .controlSize(.mini)
-                        }
-                        
-                        let displayTags = item.tags.filter { !filteredTags.contains($0) }
-                        if !displayTags.isEmpty {
-                            ForEach(displayTags.prefix(4), id: \.self) { tagName in
-                                let isTagHighlighted = isTagMatchingSearch(tagName: tagName, searchText: searchText)
-                                Text(tagName)
-                                    .font(isTagHighlighted ? .caption.bold() : .caption)
-                                    .foregroundStyle(isTagHighlighted ? .white : Design.primaryColor)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(
-                                        Capsule()
-                                            .fill(isTagHighlighted ? Design.primaryColor : Design.primaryColor.opacity(0.08))
-                                    )
-                            }
-                            
-                            if displayTags.count > 4 {
-                                Text("+\(displayTags.count - 4)")
-                                    .font(.caption)
-                                    .foregroundStyle(Color(.tertiaryLabel))
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        if !isEditMode {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 14, weight: .regular))
-                                .foregroundStyle(Color(.tertiaryLabel))
-                                .frame(width: 32, height: 16, alignment: .trailing)
-                        }
-                }
-                .frame(height: 16)
-                .contentShape(Rectangle())
-                .allowsHitTesting(!isEditMode && !item.isDownloading)
-                .onTapGesture {
-                    onTagTap()
-                }
-                .accessibilityAddTraits(.isButton)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(rowBackground)
-        .contentShape(Rectangle())
-        .onTapGesture {
+    var body: some View {
+        Group {
             if isEditMode {
-                onToggleSelection()
+                Button(action: onToggleSelection) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .font(.title3)
+                            .foregroundStyle(isSelected ? Design.primaryColor : Color.secondary)
+                            .accessibilityHidden(true)
+                        recordContent
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(item.isDownloading)
+                .accessibilityValue(isSelected ? "已选择" : "未选择")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    recordContent.textSelection(.enabled)
+                    if item.text.count > 200 {
+                        Button(isExpanded ? "收起全文" : "展开全文") { isExpanded.toggle() }
+                            .font(.subheadline)
+                            .frame(minHeight: 44)
+                            .buttonStyle(.borderless)
+                    }
+                    HStack(alignment: .center, spacing: 8) {
+                        Button(action: onTagTap) {
+                            Label(item.tags.isEmpty ? "添加标签" : item.tags.joined(separator: " · "), systemImage: "tag")
+                                .font(.subheadline)
+                                .multilineTextAlignment(.leading)
+                                .frame(minHeight: 44, alignment: .leading)
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(item.isDownloading)
+                        .accessibilityLabel("编辑记录标签")
+                        .accessibilityValue(item.tags.isEmpty ? "无标签" : item.tags.joined(separator: "、"))
+                        Spacer(minLength: 0)
+                        Menu { rowActions } label: {
+                            Image(systemName: "ellipsis")
+                                .font(Design.controlFont)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityLabel("记录操作")
+                    }
+                }
+                .contextMenu { rowActions }
             }
         }
-        .accessibilityAddTraits(.isButton)
-        .contextMenu {
-            if !isEditMode {
-                if !item.isDownloading {
-                    Button {
-                        onCopy()
-                    } label: {
-                        Label("复制", systemImage: "doc.on.doc")
-                    }
-                    
-                    Button {
-                        onTagTap()
-                    } label: {
-                        Label("标签", systemImage: "tag")
-                    }
-                    
-                    Button {
-                        onEdit()
-                    } label: {
-                        Label("选择", systemImage: "checkmark.circle")
-                    }
-                    
-                    Divider()
-                }
-                
-                Button(role: .destructive) {
-                    onDelete()
-                } label: {
-                    Label("删除", systemImage: "trash")
-                }
-            }
+        .padding(.vertical, 6)
+        .listRowBackground(isSelected ? Design.primaryColor.opacity(0.10) : Color(.secondarySystemGroupedBackground))
+        .alert("删除这条记录？", isPresented: $showDeleteConfirmation) {
+            Button("取消", role: .cancel) { }
+            Button("删除记录", role: .destructive, action: onDelete)
+        } message: {
+            Text("删除后不可恢复。")
         }
     }
-    
-    @ViewBuilder
-    private func highlightedText(_ text: String, searchText: String) -> some View {
-        let attributedString = createHighlightedAttributedString(text: text, searchText: searchText)
-        Text(attributedString)
+
+    private var recordContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if item.isDownloading && item.text.isEmpty {
+                Label("正在从 iCloud 下载", systemImage: "icloud.and.arrow.down")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(highlightedText(isExpanded ? item.text : item.preview))
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 8) {
+                Text(item.formattedDate)
+                    .accessibilityLabel(item.createdAt.formatted(date: .complete, time: .shortened))
+                if item.isDownloading { ProgressView().accessibilityLabel("正在下载") }
+                if isCopied { Label("已复制", systemImage: "checkmark") }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
     }
-    
-    private func isTagMatchingSearch(tagName: String, searchText: String) -> Bool {
-        guard !searchText.isEmpty else { return false }
-        let tokens = searchText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(whereSeparator: { $0.isWhitespace })
-            .map { $0.lowercased() }
-            .filter { !$0.isEmpty }
-        return tokens.contains { tagName.lowercased().contains($0) }
+
+    @ViewBuilder private var rowActions: some View {
+        if !item.isDownloading {
+            Button("复制记录", systemImage: "doc.on.doc", action: onCopy)
+            Button("编辑标签", systemImage: "tag", action: onTagTap)
+            Button("选择记录", systemImage: "checkmark.circle", action: onEdit)
+        }
+        Button("删除记录", systemImage: "trash", role: .destructive) { showDeleteConfirmation = true }
     }
-    
-    private func createHighlightedAttributedString(text: String, searchText: String) -> AttributedString {
-        var attributedString = AttributedString(text)
-        
-        let lowercasedText = text.lowercased()
-        let tokens = searchText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(whereSeparator: { $0.isWhitespace })
-            .map { $0.lowercased() }
-            .filter { !$0.isEmpty }
-        
-        guard !tokens.isEmpty else { return attributedString }
-        
+
+    private func highlightedText(_ text: String) -> AttributedString {
+        var result = AttributedString(text)
+        let tokens = searchText.split(whereSeparator: \.isWhitespace).map(String.init)
         for token in tokens {
-            var searchStartIndex = lowercasedText.startIndex
-            while let range = lowercasedText.range(of: token, range: searchStartIndex..<lowercasedText.endIndex) {
-                if let attributedRange = Range(NSRange(range, in: text), in: attributedString) {
-                    attributedString[attributedRange].backgroundColor = Design.primaryColor.opacity(0.25)
-                    attributedString[attributedRange].foregroundColor = Design.primaryColor
+            var start = text.startIndex
+            while let range = text.range(of: token, options: [.caseInsensitive, .diacriticInsensitive], range: start..<text.endIndex) {
+                if let attributedRange = Range(NSRange(range, in: text), in: result) {
+                    result[attributedRange].backgroundColor = Design.primaryColor.opacity(0.16)
+                    result[attributedRange].font = .body.bold()
                 }
-                searchStartIndex = range.upperBound
+                start = range.upperBound
             }
         }
-        
-        return attributedString
-    }
-    
-    @ViewBuilder
-    private var rowBackground: some View {
-        if isSelected {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Design.primaryColor.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(Design.primaryColor.opacity(0.25), lineWidth: 1.5)
-                )
-        } else {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemBackground))
-                .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 2)
-        }
+        return result
     }
 }
 
@@ -1182,20 +1025,13 @@ struct StatisticsView: View {
                         selectedDate: $selectedDate,
                         recordsByDate: recordsByDate
                     )
-                } header: {
-                    HStack {
-                        Text("记录日历")
-                        Spacer()
-                        if selectedDate != nil {
-                            Button("查看全部") {
-                                withAnimation {
-                                    selectedDate = nil
-                                }
-                            }
-                            .font(.caption)
-                            .textCase(nil)
-                        }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                    if selectedDate != nil {
+                        Button("查看全部日期") { selectedDate = nil }
+                            .frame(minHeight: 44)
                     }
+                } header: {
+                    Text("记录日历")
                 }
                 
                 Section {
@@ -1260,127 +1096,128 @@ struct StatisticsView: View {
 }
 
 struct CalendarGridView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var displayedMonth: Date
     @Binding var selectedDate: Date?
     let recordsByDate: [Date: Int]
-    
+
     private let calendar = Calendar.current
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
-    private let weekdaySymbols = ["日", "一", "二", "三", "四", "五", "六"]
-    
-    private var monthYearString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年M月"
-        return formatter.string(from: displayedMonth)
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 44), spacing: 0), count: 7)
+
+    private var weekdaySymbols: [String] {
+        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        let offset = calendar.firstWeekday - 1
+        return Array(symbols[offset...]) + Array(symbols[..<offset])
     }
-    
+
     private var daysInMonth: [Date?] {
         guard let range = calendar.range(of: .day, in: .month, for: displayedMonth),
-              let firstDay = calendar.date(from: calendar.dateComponents([.year, .month], from: displayedMonth)) else {
-            return []
+              let firstDay = calendar.date(from: calendar.dateComponents([.year, .month], from: displayedMonth)) else { return [] }
+        let offset = (calendar.component(.weekday, from: firstDay) - calendar.firstWeekday + 7) % 7
+        return Array(repeating: nil, count: offset) + range.map {
+            calendar.date(byAdding: .day, value: $0 - 1, to: firstDay)
         }
-        
-        let firstWeekday = calendar.component(.weekday, from: firstDay) - 1
-        var days: [Date?] = Array(repeating: nil, count: firstWeekday)
-        
-        for day in range {
-            if let date = calendar.date(byAdding: .day, value: day - 1, to: firstDay) {
-                days.append(date)
-            }
-        }
-        
-        return days
     }
-    
+
     var body: some View {
         VStack(spacing: 12) {
-            HStack {
-                Button {
-                    withAnimation {
-                        displayedMonth = calendar.date(byAdding: .month, value: -1, to: displayedMonth) ?? displayedMonth
-                    }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Design.primaryColor)
-                }
-                
-                Spacer()
-                
-                Text(monthYearString)
-                    .font(.callout.bold())
-                
-                Spacer()
-                
-                Button {
-                    withAnimation {
-                        displayedMonth = calendar.date(byAdding: .month, value: 1, to: displayedMonth) ?? displayedMonth
-                    }
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Design.primaryColor)
-                }
+            HStack(spacing: 4) {
+                Button("上个月", systemImage: "chevron.left") { changeMonth(by: -1) }
+                    .labelStyle(.iconOnly)
+                    .font(Design.controlFont)
+                    .frame(width: 44, height: 44)
+                Text(displayedMonth.formatted(.dateTime.year().month(dynamicTypeSize.isAccessibilitySize ? .abbreviated : .wide)))
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityAddTraits(.isHeader)
+                Button("下个月", systemImage: "chevron.right") { changeMonth(by: 1) }
+                    .labelStyle(.iconOnly)
+                    .font(Design.controlFont)
+                    .frame(width: 44, height: 44)
             }
-            .padding(.horizontal, 8)
-            
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(weekdaySymbols, id: \.self) { symbol in
-                    Text(symbol)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(height: 24)
-                }
-            }
-            
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(daysInMonth.enumerated(), id: \.offset) { _, date in
-                    if let date {
-                        let dateOnly = calendar.startOfDay(for: date)
-                        let count = recordsByDate[dateOnly] ?? 0
-                        let isToday = calendar.isDateInToday(date)
-                        let isSelected = selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false
-                        
-                        VStack(spacing: 2) {
-                            Text("\(calendar.component(.day, from: date))")
-                                .font(.system(size: 14, weight: isToday || isSelected ? .bold : .regular))
-                                .foregroundStyle(isSelected ? .white : (isToday ? Design.primaryColor : .primary))
-                            
-                            if count > 0 && !isSelected {
-                                Circle()
-                                    .fill(Design.primaryColor.opacity(min(Double(count) / 5.0, 1.0) * 0.7 + 0.3))
-                                    .frame(width: 6, height: 6)
-                            } else {
-                                Circle()
-                                    .fill(Color.clear)
-                                    .frame(width: 6, height: 6)
-                            }
-                        }
-                        .frame(width: 44, height: 44)
-                        .background(
-                            Circle()
-                                .fill(isSelected ? Design.primaryColor : Color.clear)
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if count > 0 {
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                                    if isSelected {
-                                        selectedDate = nil
-                                    } else {
-                                        selectedDate = dateOnly
-                                    }
-                                }
-                            }
-                        }
-                        .accessibilityAddTraits(.isButton)
-                    } else {
-                        Color.clear
-                            .frame(height: 36)
-                    }
+            if dynamicTypeSize.isAccessibilitySize {
+                dateList
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    calendarGrid.frame(minWidth: 308)
+                    dateList
                 }
             }
         }
+        .buttonStyle(.plain)
         .padding(.vertical, 8)
+    }
+
+    private var calendarGrid: some View {
+        LazyVGrid(columns: columns, spacing: 4) {
+            ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                Text(symbol).font(.caption).foregroundStyle(.secondary)
+                    .frame(minHeight: 28)
+                    .accessibilityHidden(true)
+            }
+            ForEach(Array(daysInMonth.enumerated()), id: \.offset) { _, date in
+                if let date {
+                    let count = count(for: date)
+                    let selected = isSelected(date)
+                    Button { select(date) } label: {
+                        VStack(spacing: 2) {
+                            Text(date.formatted(.dateTime.day()))
+                                .font(.callout.weight(calendar.isDateInToday(date) || selected ? .bold : .regular))
+                            Circle()
+                                .fill(count > 0 ? (selected ? Color.white : Design.primaryColor) : .clear)
+                                .frame(width: 5, height: 5)
+                                .accessibilityHidden(true)
+                        }
+                        .frame(minWidth: 44, minHeight: 44)
+                        .foregroundStyle(selected ? Color.white : (count > 0 ? Color.primary : Color.secondary))
+                        .background(selected ? Design.primaryColor : .clear, in: RoundedRectangle(cornerRadius: 12))
+                        .contentShape(Rectangle())
+                    }
+                    .disabled(count == 0)
+                    .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
+                    .accessibilityValue("\(count) 条记录")
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                } else {
+                    Color.clear.frame(minHeight: 44).accessibilityHidden(true)
+                }
+            }
+        }
+    }
+
+    private var dateList: some View {
+        VStack(spacing: 0) {
+            let dates = daysInMonth.compactMap { $0 }.filter { count(for: $0) > 0 }
+            if dates.isEmpty {
+                Text("本月还没有记录").foregroundStyle(.secondary).padding()
+            }
+            ForEach(dates, id: \.self) { date in
+                Button { select(date) } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(date.formatted(.dateTime.month().day().weekday(.wide)))
+                            Text("\(count(for: date)) 条记录").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        if isSelected(date) { Image(systemName: "checkmark").foregroundStyle(Design.primaryColor) }
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityAddTraits(isSelected(date) ? .isSelected : [])
+                Divider()
+            }
+        }
+        .padding(.horizontal, 8)
+    }
+
+    private func count(for date: Date) -> Int { recordsByDate[calendar.startOfDay(for: date)] ?? 0 }
+    private func isSelected(_ date: Date) -> Bool { selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false }
+    private func select(_ date: Date) { selectedDate = isSelected(date) ? nil : calendar.startOfDay(for: date) }
+    private func changeMonth(by offset: Int) {
+        displayedMonth = calendar.date(byAdding: .month, value: offset, to: displayedMonth) ?? displayedMonth
+        selectedDate = nil
     }
 }

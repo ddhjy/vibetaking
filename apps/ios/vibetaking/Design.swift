@@ -1,8 +1,53 @@
 import SwiftUI
 
 enum Design {
-    static let primaryColor = Color(hex: 0x6366F1)
+    static let primaryColor = Color(.systemIndigo)
     static let negativeColor = Color(.systemRed)
+    // System toolbars keep symbol glyphs compact while content text follows Dynamic Type.
+    static let controlFont = Font.system(size: 20, weight: .regular)
+    static let minimumTarget: CGFloat = 44
+    static let readingWidth: CGFloat = 720
+}
+
+struct AppAppearance: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .tint(Design.primaryColor)
+            .transaction { transaction in
+                if reduceMotion {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+            }
+    }
+}
+
+/// Glass belongs to the control layer. Keep custom controls opaque when requested.
+struct ControlSurface: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    var emphasized = false
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content.background(
+                emphasized ? Design.primaryColor : Color(.secondarySystemBackground),
+                in: Capsule()
+            )
+        } else {
+            content.glassEffect(
+                emphasized ? .regular.tint(Design.primaryColor).interactive() : .regular.interactive(),
+                in: Capsule()
+            )
+        }
+    }
+}
+
+extension View {
+    func controlSurface(emphasized: Bool = false) -> some View {
+        modifier(ControlSurface(emphasized: emphasized))
+    }
 }
 
 extension Color {

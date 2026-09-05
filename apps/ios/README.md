@@ -2,6 +2,8 @@
 
 基于 SwiftUI 的 iOS 速记应用，主打“打开即写”：启动直接进入空白编辑页，自动聚焦、唤起键盘。草稿实时落盘，记录以 Markdown 文件存储，通过 iCloud Drive 在设备间同步。设计理念见[仓库根 README](../../README.md)，macOS 伴侣端见 [apps/macos/README.md](../macos/README.md)。
 
+当前界面的 Apple HIG 依据见 [iOS HIG 审视清单](../../docs/ios-hig-audit.md)，页面操作、修复及截图见 [逐页走查记录](../../docs/ios-ui-walkthrough.md)，维护约定见 [设计规范](../../DESIGN.md)，权限交互回归见 [测试说明](tests/README.md)。
+
 ![应用演示](../../docs/demo.png)
 
 ## 功能
@@ -27,7 +29,7 @@ Workflow 显示为主页底部工具栏的按钮，可新建、复制、排序�
 
 ### 隐藏调试入口
 
-在主页输入以「打开调试模式」开头的内容，再点按任意手动流水线按钮，会清空草稿并打开调试页（当前页面为空）。
+在主页输入以「打开调试模式」开头的内容，再点按任意手动流水线按钮，会清空草稿并打开调试说明页。
 
 ### 隐藏演示模式
 

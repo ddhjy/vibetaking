@@ -18,7 +18,7 @@ enum OffloadPermissionLevel: Int, CaseIterable {
     var displayName: String {
         switch self {
         case .bypass: return "直接允许"
-        case .askOnce: return "每次询问"
+        case .askOnce: return "每段会话询问"
         case .notAllowed: return "禁止"
         }
     }
@@ -31,6 +31,7 @@ enum PermissionResult {
 
 struct PermissionRequest: Identifiable {
     let id: String
+    let sessionID: String
     let commandName: String
     let displayLabel: String
     let description: String
@@ -41,20 +42,20 @@ struct PermissionRequest: Identifiable {
     /// Parse the command arguments into displayable key-value pairs.
     /// Handles patterns like: `command subcommand --key value --flag`.
     var parsedArguments: [(key: String, value: String)] {
-        let parts = fullCommand.split(separator: " ").map(String.init)
+        let parts = tokenizeCommandLine(fullCommand)
         guard parts.count > 1 else { return [] }
 
         var result: [(key: String, value: String)] = []
         var idx = 1
         if idx < parts.count && !parts[idx].hasPrefix("-") {
-            result.append((key: "Action", value: parts[idx]))
+            result.append((key: "操作", value: parts[idx]))
             idx += 1
         }
         while idx < parts.count {
             let token = parts[idx]
             if token.hasPrefix("--") || token.hasPrefix("-") {
                 let key = token.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-                if idx + 1 < parts.count && !parts[idx + 1].hasPrefix("-") {
+                if idx + 1 < parts.count && !Self.isOption(parts[idx + 1]) {
                     result.append((key: key, value: parts[idx + 1]))
                     idx += 2
                 } else {
@@ -67,6 +68,10 @@ struct PermissionRequest: Identifiable {
             }
         }
         return result
+    }
+
+    private static func isOption(_ token: String) -> Bool {
+        token.hasPrefix("--") || (token.hasPrefix("-") && token.dropFirst().first?.isLetter == true)
     }
 }
 
@@ -91,6 +96,7 @@ final class OffloadPermissionManager {
     ]
 
     var pendingRequest: PermissionRequest?
+    private var queuedRequests: [PermissionRequest] = []
 
     /// Per-session "Ask Once" grants: [sessionId: Set<commandName>]
     private var sessionGrants: [String: Set<String>] = [:]
@@ -131,7 +137,8 @@ final class OffloadPermissionManager {
 
         case .notAllowed:
             logger.info("Permission denied (Not Allowed): \(command)")
-            return .denied("Permission denied: the user has disabled '\(command)'. Ask the user to change it in 设置 > AI 助手 > 设备权限.")
+            let label = Self.allCommands.first(where: { $0.name == command })?.displayLabel ?? command
+            return .denied("\(label)访问已禁用。如需允许，可前往设置 > AI 助手 > 设备权限修改。")
 
         case .askOnce:
             // Check session grant
@@ -143,24 +150,31 @@ final class OffloadPermissionManager {
             let displayLabel = cmdInfo?.displayLabel ?? command
             let description = cmdInfo?.description ?? ""
 
-            let allowed = await withCheckedContinuation { continuation in
-                let request = PermissionRequest(
-                    id: UUID().uuidString,
-                    commandName: command,
-                    displayLabel: displayLabel,
-                    description: description,
-                    fullCommand: fullCommand,
-                    continuation: continuation
-                )
-                self.pendingRequest = request
-
-                // 30s timeout
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 30_000_000_000)
-                    if self.pendingRequest?.id == request.id {
-                        self.pendingRequest = nil
+            let requestID = UUID().uuidString
+            let allowed = await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    guard !Task.isCancelled else {
                         continuation.resume(returning: false)
+                        return
                     }
+                    let request = PermissionRequest(
+                        id: requestID,
+                        sessionID: sessionId,
+                        commandName: command,
+                        displayLabel: displayLabel,
+                        description: description,
+                        fullCommand: fullCommand,
+                        continuation: continuation
+                    )
+                    if self.pendingRequest == nil {
+                        self.pendingRequest = request
+                    } else {
+                        self.queuedRequests.append(request)
+                    }
+                }
+            } onCancel: {
+                Task { @MainActor in
+                    self.respond(to: requestID, allowed: false)
                 }
             }
 
@@ -170,7 +184,7 @@ final class OffloadPermissionManager {
                 return .allowed
             } else {
                 logger.info("Permission denied (Ask Once): \(command)")
-                return .denied("Permission denied: the user declined '\(command)' for this session. Ask the user to change it in 设置 > AI 助手 > 设备权限.")
+                return .denied("未获得\(displayLabel)访问授权，本次操作未执行。")
             }
         }
     }
@@ -178,9 +192,32 @@ final class OffloadPermissionManager {
     // MARK: - UI Response
 
     func respond(to requestId: String, allowed: Bool) {
-        guard let request = pendingRequest, request.id == requestId else { return }
-        pendingRequest = nil
+        if let request = pendingRequest, request.id == requestId {
+            pendingRequest = nil
+            finish(request, allowed: allowed)
+            presentNextRequest()
+        } else if let index = queuedRequests.firstIndex(where: { $0.id == requestId }) {
+            let request = queuedRequests.remove(at: index)
+            finish(request, allowed: allowed)
+        }
+    }
+
+    private func finish(_ request: PermissionRequest, allowed: Bool) {
+        if allowed {
+            sessionGrants[request.sessionID, default: []].insert(request.commandName)
+        }
         request.continuation.resume(returning: allowed)
+    }
+
+    private func presentNextRequest() {
+        while pendingRequest == nil, !queuedRequests.isEmpty {
+            let next = queuedRequests.removeFirst()
+            if sessionGrants[next.sessionID]?.contains(next.commandName) == true {
+                finish(next, allowed: true)
+            } else {
+                pendingRequest = next
+            }
+        }
     }
 
     // MARK: - Session Reset

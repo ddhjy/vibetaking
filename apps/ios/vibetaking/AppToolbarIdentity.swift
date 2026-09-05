@@ -10,10 +10,10 @@ struct AppToolbarMoreLabel: View {
     var body: some View {
         if isLoading {
             ProgressView()
-                .scaleEffect(0.8)
+                .accessibilityLabel("正在处理")
         } else {
             Image(systemName: "ellipsis")
-                .font(.system(size: 17, weight: .regular))
+                .font(.body)
         }
     }
 }
