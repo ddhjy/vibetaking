@@ -6,7 +6,9 @@
 
 ## 颜色和材质
 
-- 强调色：`UIColor.systemIndigo`，沿用靛蓝识别，支持系统深浅色及高对比度。
+- 普通按钮、导航和菜单图标使用 `Design.controlColor`（`UIColor.label`），浅色模式为黑色，深色模式随系统适配。
+- 强调色：`UIColor.systemIndigo`，仅用于标签、选中状态等需要强调的信息，不作为全局控件 tint。
+- 专注模式工作流按钮沿用黑底白字，包括降低透明度时的不透明背景。
 - 编辑和会话背景：`systemBackground`；列表：`systemGroupedBackground`、`secondarySystemGroupedBackground`。
 - 正文：`Color.primary` / `UIColor.label`；说明：`Color.secondary` / `secondaryLabel`。
 - 删除和失败使用系统 red，并同时提供名称、符号或文字状态。

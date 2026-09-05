@@ -34,7 +34,7 @@ private struct WorkflowEditButton: View {
                 editMode?.wrappedValue = isEditing ? .inactive : .active
             }
         }
-        .tint(Design.primaryColor)
+        .tint(Design.controlColor)
         .id(WorkflowToolbarIdentity.editButton)
     }
 }

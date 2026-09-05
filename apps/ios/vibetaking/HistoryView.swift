@@ -876,6 +876,7 @@ struct HistoryRowView: View {
                                 .frame(minHeight: 44, alignment: .leading)
                         }
                         .buttonStyle(.borderless)
+                        .tint(Design.primaryColor)
                         .disabled(item.isDownloading)
                         .accessibilityLabel("编辑记录标签")
                         .accessibilityValue(item.tags.isEmpty ? "无标签" : item.tags.joined(separator: "、"))

@@ -400,7 +400,7 @@ struct ContentView: View {
                 }
             }
             .foregroundStyle(focused ? Color.white : Color.primary)
-            .tint(focused ? Color.white : Design.primaryColor)
+            .tint(focused ? Color.white : Design.controlColor)
             .padding(.horizontal, focused ? 16 : 0)
             .frame(width: focused ? nil : Design.minimumTarget, height: focused ? 48 : Design.minimumTarget)
             .frame(maxWidth: focused ? .infinity : nil)

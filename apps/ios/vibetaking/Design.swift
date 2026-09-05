@@ -1,6 +1,8 @@
 import SwiftUI
 
 enum Design {
+    // Neutral controls leave indigo for tags and meaningful selection states.
+    static let controlColor = Color(.label)
     static let primaryColor = Color(.systemIndigo)
     static let negativeColor = Color(.systemRed)
     // System toolbars keep symbol glyphs compact while content text follows Dynamic Type.
@@ -17,7 +19,7 @@ struct AppAppearance: ViewModifier {
         // iOS 26 doesn't inherit SwiftUI tint for its back chevron. Color the
         // system indicator itself while preserving the native button and mask.
         let defaults = UINavigationBarAppearance()
-        let color = UIColor(Design.primaryColor)
+        let color = UIColor.label
         let palette = UIImage.SymbolConfiguration(paletteColors: [color])
         let indicator = defaults.backIndicatorImage.applyingSymbolConfiguration(palette)?
             .withRenderingMode(.alwaysOriginal)
@@ -29,7 +31,7 @@ struct AppAppearance: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .tint(Design.primaryColor)
+            .tint(Design.controlColor)
             .transaction { transaction in
                 if reduceMotion {
                     transaction.animation = nil
@@ -47,12 +49,12 @@ struct ControlSurface: ViewModifier {
     func body(content: Content) -> some View {
         if reduceTransparency {
             content.background(
-                emphasized ? Design.primaryColor : Color(.secondarySystemBackground),
+                emphasized ? Color.black : Color(.secondarySystemBackground),
                 in: Capsule()
             )
         } else {
             content.glassEffect(
-                emphasized ? .regular.tint(Design.primaryColor).interactive() : .regular.interactive(),
+                emphasized ? .regular.tint(Color.black).interactive() : .regular.interactive(),
                 in: Capsule()
             )
         }
