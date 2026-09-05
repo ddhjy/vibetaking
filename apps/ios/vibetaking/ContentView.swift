@@ -260,7 +260,7 @@ struct ContentView: View {
             }
             HStack(spacing: 12) {
                 if isFocusMode, let workflow = focusedWorkflow {
-                    workflowButton(for: workflow)
+                    workflowButton(for: workflow, focused: true)
                         .frame(maxWidth: .infinity)
                         .controlSurface(emphasized: true)
 
@@ -312,6 +312,8 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.primary)
+            // Keep the keyboard inset and trailing controls stable throughout the focus transition.
+            .frame(height: Design.minimumTarget)
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
             .animation(focusTransition, value: isFocusMode)
@@ -404,9 +406,8 @@ struct ContentView: View {
         .disabled(processingWorkflowId != nil)
     }
 
-    private func workflowButton(for workflow: Workflow) -> some View {
-        let focused = isFocusMode && focusedWorkflow?.id == workflow.id
-        return Button {
+    private func workflowButton(for workflow: Workflow, focused: Bool = false) -> some View {
+        Button {
             handleWorkflowTap(workflow)
         } label: {
             HStack(spacing: 8) {
@@ -425,7 +426,7 @@ struct ContentView: View {
             .foregroundStyle(focused ? Color.white : Color.primary)
             .tint(focused ? Color.white : Design.controlColor)
             .padding(.horizontal, focused ? 16 : 0)
-            .frame(width: focused ? nil : Design.minimumTarget, height: focused ? 48 : Design.minimumTarget)
+            .frame(width: focused ? nil : Design.minimumTarget, height: Design.minimumTarget)
             .frame(maxWidth: focused ? .infinity : nil)
             .contentShape(Capsule())
         }
