@@ -580,6 +580,10 @@ private struct EmptyWorkflowNodesView: View {
                 onAdd()
             } label: {
                 Label("添加步骤", systemImage: "plus.circle.fill")
+                    // Avoid the list's automatic label style tinting the icon to match the button fill.
+                    .labelStyle(.titleAndIcon)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(WorkflowConfigStyle.selectedForeground)
             }
             .buttonStyle(.borderedProminent)
             .tint(WorkflowConfigStyle.controlTint)

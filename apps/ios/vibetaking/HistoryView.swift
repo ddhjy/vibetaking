@@ -274,7 +274,7 @@ struct HistoryView: View {
     
     var body: some View {
         ZStack {
-            Color(.systemGroupedBackground)
+            Color(.systemBackground)
                 .ignoresSafeArea()
             
             if (historyManager.isLoading || isRebuildingCache) && listCache.savedItems.isEmpty {
@@ -309,7 +309,7 @@ struct HistoryView: View {
             }
         }
         .navigationTitle(isEditMode ? "已选择 \(selectedItems.count) 条" : "记录")
-        .navigationBarTitleDisplayMode(isEditMode ? .inline : .large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(id: AppToolbarIdentity.moreButton, placement: .topBarTrailing) {
                 if isEditMode && !listCache.savedItems.isEmpty {
@@ -701,7 +701,8 @@ struct HistoryView: View {
                 .id(item.id)
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .scrollDismissesKeyboard(.interactively)
         .id(listProjectionID)
     }
@@ -889,8 +890,10 @@ struct HistoryRowView: View {
                 .contextMenu { rowActions }
             }
         }
-        .padding(.vertical, 6)
-        .listRowBackground(isSelected ? Design.primaryColor.opacity(0.10) : Color(.secondarySystemGroupedBackground))
+        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+        .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
+        .listRowBackground(isSelected ? Design.primaryColor.opacity(0.10) : Color(.systemBackground))
         .alert("删除这条记录？", isPresented: $showDeleteConfirmation) {
             Button("取消", role: .cancel) { }
             Button("删除记录", role: .destructive, action: onDelete)

@@ -492,9 +492,12 @@ struct TagFilterBar: View {
         if availableTagsFromItems.isEmpty {
             EmptyView()
         } else {
+            let visibleLevels = (0...selectedTags.count).filter { level in
+                !getAvailableTagsWithCounts(at: level, availableTagsFromItems: availableTagsFromItems).isEmpty
+            }
             ScrollView(.vertical) {
               VStack(spacing: 0) {
-                ForEach(0...selectedTags.count, id: \.self) { level in
+                ForEach(visibleLevels, id: \.self) { level in
                     let filteredItemCount = getFilteredItemCount(at: level)
                     let availableTagsWithCounts = getAvailableTagsWithCounts(at: level, availableTagsFromItems: availableTagsFromItems)
                     
@@ -548,7 +551,7 @@ struct TagFilterBar: View {
                 }
               }
             }
-            .frame(height: min(filterRowHeight * Double(selectedTags.count + 1), dynamicTypeSize.isAccessibilitySize ? 110 : 180))
+            .frame(height: min(filterRowHeight * Double(visibleLevels.count), dynamicTypeSize.isAccessibilitySize ? 110 : 180))
         }
     }
     
@@ -695,9 +698,9 @@ struct FilterChip: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let selectionState {
-                    Image(systemName: selectionState == .positive ? "checkmark" : "minus.circle")
-                        .foregroundStyle(selectionState == .negative ? Design.negativeColor : Design.primaryColor)
+                if selectionState == .negative {
+                    Image(systemName: "minus.circle")
+                        .foregroundStyle(Design.negativeColor)
                 }
                 Text(title)
                 if let count { Text(count.formatted()).foregroundStyle(.secondary) }

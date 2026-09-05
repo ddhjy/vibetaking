@@ -255,11 +255,11 @@ struct ContentView: View {
                             }
                         }
                         .padding(.horizontal, 4)
-                        .controlSurface()
-                        .padding(.vertical, 4)
                     }
                     .scrollIndicators(.hidden)
                     .fixedSize(horizontal: false, vertical: true)
+                    // Keep the glass outside the scroll view so its shadow isn't clipped into a rectangle.
+                    .controlSurface()
                 }
                 tagButton
 
@@ -341,21 +341,16 @@ struct ContentView: View {
         return Button {
             handleWorkflowTap(workflow)
         } label: {
-            HStack(spacing: 8) {
+            Group {
                 if visibleLoadingWorkflowId == workflow.id {
                     ProgressView()
                 } else {
                     Image(systemName: workflow.icon).font(Design.controlFont)
                 }
-                Text(workflow.name)
-                    .lineLimit(focused ? 2 : 1)
-                    .truncationMode(.middle)
             }
-            .font(.body.weight(.medium))
             .foregroundStyle(focused ? Color.white : Color.primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(minWidth: 44, minHeight: focused ? 48 : 44)
+            .tint(focused ? Color.white : Design.primaryColor)
+            .frame(width: 44, height: focused ? 48 : 44)
             .frame(maxWidth: focused ? .infinity : nil)
             .contentShape(Capsule())
         }
