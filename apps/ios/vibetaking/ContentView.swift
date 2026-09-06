@@ -88,7 +88,7 @@ struct ContentView: View {
                             .padding(.leading, 20)
                             .padding(.trailing, 130)
                             // The native toolbar reserves 12 pt below its controls.
-                            .frame(height: max(0, navigationHeight - 12))
+                            .frame(height: max(0, navigationHeight - 12), alignment: .bottom)
                             .offset(y: -navigationHeight)
                     }
                     .allowsHitTesting(false)
