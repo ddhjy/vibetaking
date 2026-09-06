@@ -372,6 +372,10 @@ struct SettingsView: View {
                     }
 
                     Section {
+                        if let appBuildNumber {
+                            LabeledContent("构建号", value: appBuildNumber)
+                        }
+
                         Button(action: showFlexExplorer) {
                             Label("打开 FLEX", systemImage: "hammer")
                         }
@@ -390,6 +394,7 @@ struct SettingsView: View {
                         LabeledContent("版本", value: appVersionLabel)
                             .foregroundStyle(.primary)
                             .frame(minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -450,9 +455,15 @@ struct SettingsView: View {
     }
 
     private var appVersionLabel: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
-        return build.isEmpty ? version : "\(version) (\(build))"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
+    private var appBuildNumber: String? {
+        guard let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !build.isEmpty else {
+            return nil
+        }
+        return build
     }
 
     private func handleVersionTap() {
