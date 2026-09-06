@@ -86,7 +86,7 @@ struct ContentView: View {
                         AppTitleWordmark(height: min(titleWordmarkHeight, max(0, navigationHeight - 12)))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.leading, 20)
-                            .padding(.trailing, 80)
+                            .padding(.trailing, 130)
                             // The native toolbar reserves 12 pt below its controls.
                             .frame(height: max(0, navigationHeight - 12))
                             .offset(y: -navigationHeight)
@@ -95,6 +95,18 @@ struct ContentView: View {
                 }
             }
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("记录", systemImage: "rectangle.stack") {
+                        navigateToHistory()
+                    }
+                    .labelStyle(.iconOnly)
+                    .accessibilityLabel("记录")
+                    .accessibilityHint("打开记录列表")
+                    .disabled(processingWorkflowId != nil)
+                }
+
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+
                 ToolbarItem(id: AppToolbarIdentity.moreButton, placement: .topBarTrailing) {
                     Menu("更多操作", systemImage: "ellipsis") {
                         Button {
@@ -293,19 +305,8 @@ struct ContentView: View {
                     } else {
                         workflowToolbar
                     }
-                    HStack(spacing: 4) {
-                        tagButton
-                        Button(action: searchDraftInHistory) {
-                            Image(systemName: "rectangle.stack")
-                                .font(Design.controlFont)
-                                .frame(width: Design.minimumTarget, height: Design.minimumTarget)
-                        }
-                        .accessibilityLabel("记录与搜索")
-                        .accessibilityHint(trimmedDraftText.isEmpty ? "打开记录列表" : "使用当前草稿内容搜索记录")
-                        .disabled(processingWorkflowId != nil)
-                    }
-                    .padding(.horizontal, 4)
-                    .controlSurface()
+                    tagButton
+                        .controlSurface()
                 }
 
                 clearDraftButton
@@ -557,14 +558,6 @@ struct ContentView: View {
         }
     }
 
-    private func searchDraftInHistory() {
-        if trimmedDraftText.isEmpty {
-            navigateToHistory()
-        } else {
-            navigateToHistory(searchText: trimmedDraftText)
-        }
-    }
-    
     private func clearText() {
         let announcement = canRestoreDraft ? "已\(clearDraftLabel)" : "已\(clearDraftLabel)，可以撤销"
         if draftText.isEmpty {
