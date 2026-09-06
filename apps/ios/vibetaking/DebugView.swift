@@ -5,7 +5,19 @@ struct DebugView: View {
     
     var body: some View {
         NavigationStack {
-            ContentUnavailableView("暂无调试选项", systemImage: "wrench.and.screwdriver", description: Text("当前版本没有可调整的调试选项。"))
+            List {
+                Section {
+                    Button(action: showFlexExplorer) {
+                        Label("打开 FLEX", systemImage: "hammer")
+                    }
+                    .disabled(!InAppDebugger.canShowExplorer)
+                } footer: {
+                    Text(InAppDebugger.canShowExplorer
+                         ? "打开 FLEX 悬浮工具条，查看界面层级、网络请求和运行时对象。"
+                         : "FLEX 仅在 Debug 构建中可用。")
+                }
+            }
+            .listStyle(.insetGrouped)
             .navigationTitle("调试模式")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -17,6 +29,10 @@ struct DebugView: View {
                 }
             }
         }
+    }
+
+    private func showFlexExplorer() {
+        InAppDebugger.showExplorer()
     }
 }
 

@@ -359,7 +359,7 @@ struct SettingsView: View {
                     Text("导出包含 AI 设置、全部工作流和可直接读取的密钥，仅存放或传给你信任的设备。导入会替换这些设置，记录不受影响。")
                 }
 
-                if shouldShowDemoModeSection {
+                if shouldShowHiddenToolsSection {
                     Section {
                         Toggle("演示模式", isOn: Binding(
                             get: { demoMode.isEnabled },
@@ -369,6 +369,19 @@ struct SettingsView: View {
                         Text("演示模式")
                     } footer: {
                         Text("使用独立的示例数据，不影响你的真实记录。")
+                    }
+
+                    Section {
+                        Button(action: showFlexExplorer) {
+                            Label("打开 FLEX", systemImage: "hammer")
+                        }
+                        .disabled(!InAppDebugger.canShowExplorer)
+                    } header: {
+                        Text("调试")
+                    } footer: {
+                        Text(InAppDebugger.canShowExplorer
+                             ? "打开 FLEX 悬浮工具条，查看界面层级、网络请求和运行时对象。"
+                             : "FLEX 仅在 Debug 构建中可用。")
                     }
                 }
 
@@ -432,7 +445,7 @@ struct SettingsView: View {
         }
     }
 
-    private var shouldShowDemoModeSection: Bool {
+    private var shouldShowHiddenToolsSection: Bool {
         demoMode.isEnabled || showDemoModeSection
     }
 
@@ -451,10 +464,10 @@ struct SettingsView: View {
 
     private func setDemoModeEnabled(_ enabled: Bool) {
         demoMode.setEnabled(enabled)
-        if !enabled {
-            showDemoModeSection = false
-            versionTapCount = 0
-        }
+    }
+
+    private func showFlexExplorer() {
+        InAppDebugger.showExplorer()
     }
 
     private func exportConfiguration() {

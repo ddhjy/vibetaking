@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A1F1E4032F1A0001007D8C71 /* FLEX in Frameworks */ = {isa = PBXBuildFile; productRef = A1F1E4022F1A0001007D8C71 /* FLEX */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		0C7A28222F1403B6007D8C71 /* vibetaking.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = vibetaking.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1F1E4032F1A0001007D8C71 /* FLEX in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 			);
 			name = vibetaking;
 			packageProductDependencies = (
+				A1F1E4022F1A0001007D8C71 /* FLEX */,
 			);
 			productName = vibetaking;
 			productReference = 0C7A28222F1403B6007D8C71 /* vibetaking.app */;
@@ -107,6 +113,9 @@
 			);
 			mainGroup = 0C7A28192F1403B6007D8C71;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A1F1E4012F1A0001007D8C71 /* XCRemoteSwiftPackageReference "FLEX" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0C7A28232F1403B6007D8C71 /* Products */;
 			projectDirPath = "";
@@ -349,6 +358,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A1F1E4012F1A0001007D8C71 /* XCRemoteSwiftPackageReference "FLEX" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FLEXTool/FLEX.git";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1F1E4022F1A0001007D8C71 /* FLEX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1F1E4012F1A0001007D8C71 /* XCRemoteSwiftPackageReference "FLEX" */;
+			productName = FLEX;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 0C7A281A2F1403B6007D8C71 /* Project object */;
 }

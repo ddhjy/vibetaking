@@ -1,0 +1,15 @@
+{
+  "originHash" : "7001c9eb6bbd2aa88a35594985c2e24fab9c0433b2784e0ac6a8354e6df61691",
+  "pins" : [
+    {
+      "identity" : "flex",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/FLEXTool/FLEX.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "63a6f588841e94e4c3adaa045ff16eb8163f0bb4"
+      }
+    }
+  ],
+  "version" : 3
+}
