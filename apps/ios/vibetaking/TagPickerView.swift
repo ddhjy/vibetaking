@@ -142,32 +142,24 @@ struct TagPickerView: View {
     var body: some View {
         NavigationStack {
             List {
-                if isRecommendingTags {
-                    ProgressView("正在推荐标签，可先手动选择…")
-                        .font(.footnote)
-                } else if let recommendationMessage {
-                    Text(recommendationMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                if displayedTags.isEmpty {
-                    ContentUnavailableView {
-                        Label(trimmedSearchText.isEmpty ? "还没有标签" : "没有匹配的标签", systemImage: "tag")
-                    } description: {
-                        Text(trimmedSearchText.isEmpty ? "给记录加上“工作”或“灵感”等标签，之后更容易找到。" : "试试其他名称，或把搜索内容创建为新标签。")
-                    } actions: {
-                        Button(canCreateTagFromSearch ? "创建“\(trimmedSearchText)”" : "新建标签") {
-                            if canCreateTagFromSearch { createTagFromSearch() } else { showCreateTag = true }
+                Section {
+                    if displayedTags.isEmpty {
+                        ContentUnavailableView {
+                            Label(trimmedSearchText.isEmpty ? "还没有标签" : "没有匹配的标签", systemImage: "tag")
+                        } description: {
+                            Text(trimmedSearchText.isEmpty ? "给记录加上“工作”或“灵感”等标签，之后更容易找到。" : "试试其他名称，或把搜索内容创建为新标签。")
+                        } actions: {
+                            Button(canCreateTagFromSearch ? "创建“\(trimmedSearchText)”" : "新建标签") {
+                                if canCreateTagFromSearch { createTagFromSearch() } else { showCreateTag = true }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            if !trimmedSearchText.isEmpty {
+                                Button("清除标签搜索") { searchText = "" }
+                                    .buttonStyle(.bordered)
+                            }
                         }
-                        .buttonStyle(.borderedProminent)
-                        if !trimmedSearchText.isEmpty {
-                            Button("清除标签搜索") { searchText = "" }
-                                .buttonStyle(.bordered)
-                        }
-                    }
-                    .listRowBackground(Color.clear)
-                } else {
-                    Section {
+                        .listRowBackground(Color.clear)
+                    } else {
                         ForEach(displayedTags, id: \.self) { tagName in
                             TagRowView(
                                 tagName: tagName,
@@ -180,7 +172,11 @@ struct TagPickerView: View {
                                 Button("重命名标签", systemImage: "pencil") { editingTagName = tagName }
                             }
                         }
-                    } footer: {
+                    }
+                } header: {
+                    TagRecommendationStatus(isLoading: isRecommendingTags, message: recommendationMessage)
+                } footer: {
+                    if !displayedTags.isEmpty {
                         Text("已选择 \(selectedTagCount) 个标签，关闭时自动保存。")
                     }
                 }
@@ -254,6 +250,30 @@ struct TagPickerView: View {
     private func createTagFromSearch() {
         guard !trimmedSearchText.isEmpty else { return }
         addLocalTag(trimmedSearchText)
+    }
+}
+
+private struct TagRecommendationStatus: View {
+    let isLoading: Bool
+    var message: String? = nil
+
+    var body: some View {
+        if isLoading || message != nil {
+            HStack(spacing: 8) {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                }
+                Text(isLoading ? "正在推荐标签，可先手动选择…" : (message ?? ""))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .textCase(nil)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        }
     }
 }
 
@@ -347,6 +367,7 @@ struct TagRowView: View {
                         .font(.body)
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
                     ForEach(markers) { marker in
                         TagRowMarkerBadge(marker: marker)
                     }
@@ -357,6 +378,7 @@ struct TagRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
         .accessibilityLabel(tagName)
         .accessibilityValue(isSelected ? "已选择" : "未选择")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -376,13 +398,18 @@ struct TagRowMarkerBadge: View {
     let marker: TagRowMarker
 
     var body: some View {
-        Label(marker.rawValue, systemImage: marker == .aiRecommended ? "sparkles" : "clock")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color(.tertiarySystemFill), in: Capsule())
-            .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 4) {
+            Image(systemName: marker == .aiRecommended ? "sparkles" : "clock")
+                .accessibilityHidden(true)
+            Text(marker.rawValue)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(.tertiarySystemFill), in: Capsule())
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
     }
 }
 
