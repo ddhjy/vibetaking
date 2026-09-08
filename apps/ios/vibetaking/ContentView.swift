@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .largeTitle) private var titleWordmarkHeight: CGFloat = 34
     @AccessibilityFocusState private var accessibilityFocus: SheetTrigger?
+    @Namespace private var toolbarGlassNamespace
     private enum SheetTrigger: Hashable { case more, tags, workflows }
 
     @State private var showHistory: Bool = false
@@ -254,6 +255,10 @@ struct ContentView: View {
         reduceMotion ? nil : .easeInOut(duration: 0.2)
     }
 
+    private var toolbarFocusTransition: Animation? {
+        reduceMotion ? nil : .spring(duration: 0.42, bounce: 0.08)
+    }
+
     private var bottomToolbar: some View {
         VStack(spacing: 8) {
             if let workflowID = visibleLoadingWorkflowId,
@@ -270,46 +275,16 @@ struct ContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 20)
             }
-            HStack(spacing: 12) {
-                if isFocusMode, let workflow = focusedWorkflow {
-                    workflowButton(for: workflow, focused: true)
-                        .frame(maxWidth: .infinity)
-                        .controlSurface(emphasized: true)
-
-                    Button {
-                        exitFocusMode()
-                    } label: {
-                        Image(systemName: "viewfinder")
-                            .font(Design.controlFont)
-                            .frame(width: Design.minimumTarget, height: Design.minimumTarget)
-                    }
-                    .controlSurface()
-                    .accessibilityLabel("退出专注")
-                    .accessibilityHint("显示导航和其他工作流")
-                } else {
-                    if dynamicTypeSize.isAccessibilitySize {
-                        Menu {
-                            ForEach(workflowManager.openWorkflows) { workflow in
-                                Button(workflow.name, systemImage: workflow.icon) { handleWorkflowTap(workflow) }
-                            }
-                            Divider()
-                            Button("工作流设置", systemImage: "slider.horizontal.3") { showWorkflowConfig = true }
-                        } label: {
-                            Image(systemName: "arrow.triangle.branch")
-                                .font(Design.controlFont)
-                                .frame(width: 44, height: 44)
-                        }
+            // Keep the three surfaces alive in both modes. Only the leading capsule expands.
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 12) {
+                    workflowToolbar
+                    focusOrTagButton
                         .controlSurface()
-                        .accessibilityLabel("选择工作流")
-                        Spacer(minLength: 0)
-                    } else {
-                        workflowToolbar
-                    }
-                    tagButton
-                        .controlSurface()
+                        .glassEffectID("secondary", in: toolbarGlassNamespace)
+                    clearDraftButton
+                        .glassEffectID("clear", in: toolbarGlassNamespace)
                 }
-
-                clearDraftButton
             }
             .buttonStyle(.plain)
             .foregroundStyle(.primary)
@@ -317,7 +292,7 @@ struct ContentView: View {
             .frame(height: Design.minimumTarget)
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
-            .animation(focusTransition, value: isFocusMode)
+            .animation(toolbarFocusTransition, value: isFocusMode)
             .sensoryFeedback(.impact(weight: .medium), trigger: isFocusMode)
         }
     }
@@ -331,24 +306,50 @@ struct ContentView: View {
             let capacity = max(1, Int((geometry.size.width - 2 * inset + spacing) / (buttonWidth + spacing)))
             let visibleCount = min(buttonCount, capacity)
             // An integral number of buttons makes both edges align, including at the end of the list.
-            let width = CGFloat(visibleCount) * (buttonWidth + spacing) - spacing + 2 * inset
+            let compactWidth = dynamicTypeSize.isAccessibilitySize
+                ? buttonWidth
+                : CGFloat(visibleCount) * (buttonWidth + spacing) - spacing + 2 * inset
 
-            ScrollView(.horizontal) {
-                HStack(spacing: spacing) {
-                    workflowSettingsButton
-                    ForEach(workflowManager.openWorkflows) { workflow in
-                        workflowButton(for: workflow)
+            ZStack {
+                if let workflow = focusedWorkflow {
+                    workflowButton(for: workflow, focused: true)
+                        .transition(.blurReplace)
+                } else if dynamicTypeSize.isAccessibilitySize {
+                    Menu {
+                        ForEach(workflowManager.openWorkflows) { workflow in
+                            Button(workflow.name, systemImage: workflow.icon) { handleWorkflowTap(workflow) }
+                        }
+                        Divider()
+                        Button("工作流设置", systemImage: "slider.horizontal.3") { showWorkflowConfig = true }
+                    } label: {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(Design.controlFont)
+                            .frame(width: buttonWidth, height: buttonWidth)
                     }
+                    .accessibilityLabel("选择工作流")
+                    .transition(.blurReplace)
+                } else {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: spacing) {
+                            workflowSettingsButton
+                            ForEach(workflowManager.openWorkflows) { workflow in
+                                workflowButton(for: workflow)
+                            }
+                        }
+                        .scrollTargetLayout()
+                    }
+                    .contentMargins(.horizontal, inset, for: .scrollContent)
+                    .scrollTargetBehavior(.viewAligned)
+                    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                    .scrollIndicators(.hidden)
+                    .transition(.blurReplace)
                 }
-                .scrollTargetLayout()
             }
-            .contentMargins(.horizontal, inset, for: .scrollContent)
-            .scrollTargetBehavior(.viewAligned)
-            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-            .scrollIndicators(.hidden)
-            .frame(width: width, height: buttonWidth)
+            .frame(width: isFocusMode ? geometry.size.width : compactWidth, height: buttonWidth)
+            .clipShape(Capsule())
             // Keep the glass outside the scroll view so its shadow isn't clipped into a rectangle.
-            .controlSurface()
+            .controlSurface(emphasized: isFocusMode)
+            .glassEffectID("workflow", in: toolbarGlassNamespace)
         }
         .frame(height: Design.minimumTarget)
     }
@@ -374,13 +375,20 @@ struct ContentView: View {
         .disabled(processingWorkflowId != nil || (draftText.isEmpty && selectedTags.isEmpty && !canRestoreDraft))
     }
 
-    private var tagButton: some View {
-        Button { showTagSelector = true } label: {
-            Image(systemName: "tag")
+    private var focusOrTagButton: some View {
+        Button {
+            if isFocusMode {
+                exitFocusMode()
+            } else {
+                showTagSelector = true
+            }
+        } label: {
+            Image(systemName: isFocusMode ? "viewfinder" : "tag")
                 .font(Design.controlFont)
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 44, height: 44)
                 .overlay(alignment: .topTrailing) {
-                    if !selectedTags.isEmpty && !dynamicTypeSize.isAccessibilitySize {
+                    if !isFocusMode && !selectedTags.isEmpty && !dynamicTypeSize.isAccessibilitySize {
                         Text(selectedTags.count.formatted())
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 4)
@@ -389,8 +397,9 @@ struct ContentView: View {
                     }
                 }
         }
-        .accessibilityLabel("草稿标签")
-        .accessibilityValue(selectedTags.isEmpty ? "未选择" : selectedTags.joined(separator: "、"))
+        .accessibilityLabel(isFocusMode ? "退出专注" : "草稿标签")
+        .accessibilityValue(isFocusMode ? "" : (selectedTags.isEmpty ? "未选择" : selectedTags.joined(separator: "、")))
+        .accessibilityHint(isFocusMode ? "显示导航和其他工作流" : "")
         .accessibilityFocused($accessibilityFocus, equals: .tags)
         .disabled(processingWorkflowId != nil)
     }
