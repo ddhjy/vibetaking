@@ -7,7 +7,7 @@ enum Design {
     static let negativeColor = Color(.systemRed)
     // System toolbars keep symbol glyphs compact while content text follows Dynamic Type.
     static let controlFont = Font.system(size: 20, weight: .regular)
-    static let minimumTarget: CGFloat = 44
+    static let minimumTarget: CGFloat = 48
     static let readingWidth: CGFloat = 720
 }
 

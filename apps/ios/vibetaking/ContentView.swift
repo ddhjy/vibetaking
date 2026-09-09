@@ -367,7 +367,7 @@ struct ContentView: View {
         Button(action: clearText) {
             Image(systemName: canRestoreDraft ? "arrow.uturn.backward" : "xmark")
                 .font(Design.controlFont)
-                .frame(width: 44, height: 44)
+                .frame(width: Design.minimumTarget, height: Design.minimumTarget)
         }
         .controlSurface()
         .accessibilityLabel(clearDraftLabel)
@@ -386,7 +386,7 @@ struct ContentView: View {
             Image(systemName: isFocusMode ? "viewfinder" : "tag")
                 .font(Design.controlFont)
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: 44, height: 44)
+                .frame(width: Design.minimumTarget, height: Design.minimumTarget)
                 .overlay(alignment: .topTrailing) {
                     if !isFocusMode && !selectedTags.isEmpty && !dynamicTypeSize.isAccessibilitySize {
                         Text(selectedTags.count.formatted())
