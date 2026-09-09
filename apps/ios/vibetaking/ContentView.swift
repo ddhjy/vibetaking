@@ -738,6 +738,7 @@ struct ContentView: View {
 }
 
 struct DraftTextView: UIViewRepresentable {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var text: String
     @Binding var isFocused: Bool
     let inputSessionResetToken: Int
@@ -746,8 +747,8 @@ struct DraftTextView: UIViewRepresentable {
     var returnKeyType: UIReturnKeyType = .default
     var onReturnKeySubmit: (() -> Void)?
     
-    func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
+    func makeUIView(context: Context) -> DraftEditorTextView {
+        let textView = DraftEditorTextView()
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
         textView.font = font
@@ -767,7 +768,7 @@ struct DraftTextView: UIViewRepresentable {
         return textView
     }
     
-    func updateUIView(_ uiView: UITextView, context: Context) {
+    func updateUIView(_ uiView: DraftEditorTextView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.resetInputSessionIfNeeded(on: uiView)
         context.coordinator.syncTextIfNeeded(on: uiView)
@@ -798,6 +799,12 @@ struct DraftTextView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
+
+    static func dismantleUIView(_ uiView: DraftEditorTextView, coordinator: Coordinator) {
+        coordinator.cancelPendingUpdates()
+        uiView.endCaretStabilization()
+        uiView.delegate = nil
+    }
     
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: DraftTextView
@@ -818,8 +825,9 @@ struct DraftTextView: UIViewRepresentable {
             self.appliedReturnKeyType = parent.returnKeyType
         }
 
-        func applyReturnKeyTypeIfNeeded(on textView: UITextView) {
+        func applyReturnKeyTypeIfNeeded(on textView: DraftEditorTextView) {
             guard appliedReturnKeyType != parent.returnKeyType || textView.returnKeyType != parent.returnKeyType else { return }
+            textView.beginCaretStabilization()
             textView.returnKeyType = parent.returnKeyType
             appliedReturnKeyType = parent.returnKeyType
             scheduleKeyboardAppearanceRefresh(on: textView)
@@ -842,7 +850,7 @@ struct DraftTextView: UIViewRepresentable {
         }
 
         /// 中文九宫格会忽略 `reloadInputViews()`；进出专注又包在 SwiftUI 动画事务里，必须跳出事务并短暂交接 first responder，键盘才会改键帽。
-        private func scheduleKeyboardAppearanceRefresh(on textView: UITextView) {
+        private func scheduleKeyboardAppearanceRefresh(on textView: DraftEditorTextView) {
             keyboardRefreshGeneration &+= 1
             let generation = keyboardRefreshGeneration
             DispatchQueue.main.async { [weak self, weak textView] in
@@ -851,12 +859,13 @@ struct DraftTextView: UIViewRepresentable {
             }
         }
 
-        private func refreshKeyboardAppearance(on textView: UITextView) {
+        private func refreshKeyboardAppearance(on textView: DraftEditorTextView) {
             textView.returnKeyType = parent.returnKeyType
             appliedReturnKeyType = parent.returnKeyType
 
             let shouldKeepKeyboard = textView.isFirstResponder || parent.isFocused
             guard shouldKeepKeyboard, textView.window != nil else {
+                textView.endCaretStabilization()
                 textView.reloadInputViews()
                 return
             }
@@ -867,6 +876,7 @@ struct DraftTextView: UIViewRepresentable {
             defer {
                 UIView.setAnimationsEnabled(animationsWereEnabled)
                 isRefreshingKeyboard = false
+                textView.resumeCaretBlinking(after: parent.reduceMotion ? .zero : .milliseconds(500))
             }
 
             let probe = UITextView()
@@ -884,6 +894,11 @@ struct DraftTextView: UIViewRepresentable {
             textView.reloadInputViews()
             textView.becomeFirstResponder()
             probe.removeFromSuperview()
+        }
+
+        func cancelPendingUpdates() {
+            focusUpdateGeneration &+= 1
+            keyboardRefreshGeneration &+= 1
         }
 
         func resetInputSessionIfNeeded(on textView: UITextView) {
@@ -927,6 +942,10 @@ struct DraftTextView: UIViewRepresentable {
             lastText = textView.text
             parent.text = textView.text
         }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            (textView as? DraftEditorTextView)?.updateCaretStabilization()
+        }
         
         func textViewDidBeginEditing(_ textView: UITextView) {
             guard !isRefreshingKeyboard, !isApplyingFocusUpdate else { return }
@@ -936,10 +955,104 @@ struct DraftTextView: UIViewRepresentable {
         }
         
         func textViewDidEndEditing(_ textView: UITextView) {
-            guard !isRefreshingKeyboard, !isApplyingFocusUpdate else { return }
+            guard !isRefreshingKeyboard else { return }
+            (textView as? DraftEditorTextView)?.endCaretStabilization()
+            guard !isApplyingFocusUpdate else { return }
             if parent.isFocused {
                 parent.isFocused = false
             }
+        }
+    }
+}
+
+final class DraftEditorTextView: UITextView {
+    private var isStabilizingCaret = false
+    private var caretBlinkResumeTask: Task<Void, Never>?
+    private let transitionCursor = DraftTextCursorView()
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if let selectionDisplay = interactions.compactMap({ $0 as? UITextSelectionDisplayInteraction }).first,
+           selectionDisplay.cursorView !== transitionCursor {
+            selectionDisplay.cursorView = transitionCursor
+            selectionDisplay.setNeedsSelectionUpdate()
+        }
+        updateCaretStabilization()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil { endCaretStabilization() }
+    }
+
+    func beginCaretStabilization() {
+        caretBlinkResumeTask?.cancel()
+        caretBlinkResumeTask = nil
+        guard isFirstResponder, window != nil else {
+            endCaretStabilization()
+            return
+        }
+        isStabilizingCaret = true
+        updateCaretStabilization()
+    }
+
+    func resumeCaretBlinking(after delay: Duration) {
+        guard isStabilizingCaret else { return }
+        layoutIfNeeded()
+        updateCaretStabilization()
+        caretBlinkResumeTask?.cancel()
+        caretBlinkResumeTask = Task { @MainActor [weak self] in
+            do {
+                if delay > .zero { try await Task.sleep(for: delay) }
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.endCaretStabilization()
+        }
+    }
+
+    func endCaretStabilization() {
+        caretBlinkResumeTask?.cancel()
+        caretBlinkResumeTask = nil
+        isStabilizingCaret = false
+        transitionCursor.isStabilizing = false
+    }
+
+    func updateCaretStabilization() {
+        transitionCursor.isStabilizing = isStabilizingCaret && window != nil && selectedTextRange?.isEmpty == true
+    }
+}
+
+/// Keep UIKit's cursor drawing and geometry, but defer its hide/blink requests during a mode transition.
+final class DraftTextCursorView: UIStandardTextCursorView {
+    private var requestedBlinking = false
+    private var requestedHidden = true
+
+    var isStabilizing = false {
+        didSet {
+            guard isStabilizing != oldValue else { return }
+            super.isHidden = isStabilizing ? false : requestedHidden
+            super.isBlinking = isStabilizing ? false : requestedBlinking
+            if isStabilizing || (requestedBlinking && !requestedHidden) {
+                resetBlinkAnimation()
+            }
+        }
+    }
+
+    override var isBlinking: Bool {
+        get { super.isBlinking }
+        set {
+            requestedBlinking = newValue
+            super.isBlinking = isStabilizing ? false : newValue
+        }
+    }
+
+    override var isHidden: Bool {
+        get { super.isHidden }
+        set {
+            requestedHidden = newValue
+            super.isHidden = isStabilizing ? false : newValue
         }
     }
 }
