@@ -76,12 +76,15 @@ class AIService {
         return content
     }
 
-    func recommendTags(
+    // A Task created by the tag sheet inherits MainActor; scoring history must leave it.
+    @concurrent
+    nonisolated func recommendTags(
         for text: String,
         from availableTags: [String],
         historyExamples: [TagRecommendationExample] = [],
         maxCount: Int = 8
     ) async throws -> [String] {
+        try Task.checkCancellation()
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return [] }
 
@@ -93,7 +96,7 @@ class AIService {
 
         let uniqueTags = Array(Set(cleanedTags)).sorted()
         let limitedCount = max(1, min(maxCount, uniqueTags.count))
-        let historySection = buildHistoryExamplesSection(
+        let historySection = try buildHistoryExamplesSection(
             for: trimmedText,
             candidates: uniqueTags,
             historyExamples: historyExamples
@@ -114,11 +117,13 @@ class AIService {
         \(uniqueTags.joined(separator: " | "))
         """
 
+        try Task.checkCancellation()
         let raw = try await process(text: trimmedText, prompt: prompt)
+        try Task.checkCancellation()
         return parseRecommendedTags(raw, candidates: uniqueTags, maxCount: limitedCount)
     }
 
-    private func parseRecommendedTags(_ raw: String, candidates: [String], maxCount: Int) -> [String] {
+    nonisolated private func parseRecommendedTags(_ raw: String, candidates: [String], maxCount: Int) -> [String] {
         var candidateMap: [String: String] = [:]
         for candidate in candidates {
             let key = candidate.lowercased()
@@ -166,17 +171,17 @@ class AIService {
         return results
     }
 
-    private struct SelectedTagRecommendationExample {
+    nonisolated private struct SelectedTagRecommendationExample {
         let excerpt: String
         let tags: [String]
     }
 
-    private func buildHistoryExamplesSection(
+    nonisolated private func buildHistoryExamplesSection(
         for text: String,
         candidates: [String],
         historyExamples: [TagRecommendationExample]
-    ) -> String {
-        let selectedExamples = selectRelevantHistoryExamples(
+    ) throws -> String {
+        let selectedExamples = try selectRelevantHistoryExamples(
             for: text,
             candidates: candidates,
             historyExamples: historyExamples
@@ -197,20 +202,21 @@ class AIService {
         """
     }
 
-    private func selectRelevantHistoryExamples(
+    nonisolated private func selectRelevantHistoryExamples(
         for text: String,
         candidates: [String],
         historyExamples: [TagRecommendationExample],
         maxExamples: Int = 12,
         maxExamplesPerTag: Int = 2,
         maxExcerptLength: Int = 160
-    ) -> [SelectedTagRecommendationExample] {
+    ) throws -> [SelectedTagRecommendationExample] {
         let candidateSet = Set(candidates)
         let currentTokens = normalizedTokens(from: text)
         guard !currentTokens.isEmpty else { return [] }
 
         let now = Date()
-        let scoredExamples = historyExamples.compactMap { example -> (example: TagRecommendationExample, tags: [String], score: Double)? in
+        let scoredExamples = try historyExamples.compactMap { example -> (example: TagRecommendationExample, tags: [String], score: Double)? in
+            try Task.checkCancellation()
             let tags = cleanedTags(from: example.tags, candidateSet: candidateSet)
             guard !tags.isEmpty else { return nil }
 
@@ -263,7 +269,7 @@ class AIService {
         return selectedExamples
     }
 
-    private func cleanedTags(from tags: [String], candidateSet: Set<String>) -> [String] {
+    nonisolated private func cleanedTags(from tags: [String], candidateSet: Set<String>) -> [String] {
         var seen = Set<String>()
         return tags.compactMap { tag in
             let trimmedTag = tag.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -273,7 +279,7 @@ class AIService {
         }
     }
 
-    private func normalizedTokens(from text: String) -> Set<String> {
+    nonisolated private func normalizedTokens(from text: String) -> Set<String> {
         var tokens = Set<String>()
         var wordRun = ""
         var cjkRun: [String] = []
@@ -316,7 +322,7 @@ class AIService {
         return tokens
     }
 
-    private func isCJK(_ scalar: UnicodeScalar) -> Bool {
+    nonisolated private func isCJK(_ scalar: UnicodeScalar) -> Bool {
         switch scalar.value {
         case 0x3400...0x4DBF,
              0x4E00...0x9FFF,
@@ -331,7 +337,7 @@ class AIService {
         }
     }
 
-    private func excerpt(from text: String, maxLength: Int) -> String {
+    nonisolated private func excerpt(from text: String, maxLength: Int) -> String {
         let condensedText = text
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }

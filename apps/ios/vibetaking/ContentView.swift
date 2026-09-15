@@ -39,7 +39,6 @@ struct ContentView: View {
     @State private var statusMessage: String?
     @State private var statusMessageTask: Task<Void, Never>?
     @State private var inputSessionResetToken = 0
-    @State private var lastClearedTags: [String] = []
 
     @AppStorage("focusedWorkflowID", store: AppDefaults.current) private var focusedWorkflowIDRaw: String = ""
     /// 长按切换专注模式后，吞掉同一次按压在松手时触发的 Button 点击。
@@ -79,21 +78,19 @@ struct ContentView: View {
                 fullScreenEditor
             }
             .overlay(alignment: .topLeading) {
-                if !isFocusMode {
-                    GeometryReader { contentGeometry in
-                        // Draw the page title in the navigation bar's visual band,
-                        // without making it a navigation item or reserving another row.
-                        let navigationHeight = max(0, contentGeometry.frame(in: .global).minY - topEdge)
-                        AppTitleWordmark(height: min(titleWordmarkHeight, max(0, navigationHeight - 12)))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.leading, 20)
-                            .padding(.trailing, 130)
-                            // The native toolbar reserves 12 pt below its controls.
-                            .frame(height: max(0, navigationHeight - 12), alignment: .bottom)
-                            .offset(y: -navigationHeight)
-                    }
-                    .allowsHitTesting(false)
+                GeometryReader { contentGeometry in
+                    // Draw the page title in the navigation bar's visual band,
+                    // without making it a navigation item or reserving another row.
+                    let navigationHeight = max(0, contentGeometry.frame(in: .global).minY - topEdge)
+                    AppTitleWordmark(height: min(titleWordmarkHeight, max(0, navigationHeight - 12)))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 20)
+                        .padding(.trailing, 130)
+                        // The native toolbar reserves 12 pt below its controls.
+                        .frame(height: max(0, navigationHeight - 12), alignment: .bottom)
+                        .offset(y: -navigationHeight)
                 }
+                .allowsHitTesting(false)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -144,8 +141,6 @@ struct ContentView: View {
                     .id(AppToolbarIdentity.moreButton)
                 }
             }
-            .toolbar(isFocusMode ? .hidden : .automatic, for: .navigationBar)
-
             .navigationDestination(isPresented: $showHistory) {
                 HistoryView(initialSearchText: historySearchText)
                     .background { RootReturnButtonBehavior() }
@@ -216,12 +211,6 @@ struct ContentView: View {
                 scheduleKeyboardShow(delay: 0.5)
             }
         }
-        .onChange(of: draftText) { _, text in
-            if !text.isEmpty { lastClearedTags = [] }
-        }
-        .onChange(of: selectedTags) { _, tags in
-            if !tags.isEmpty { lastClearedTags = [] }
-        }
         .onChange(of: isPresentingSheet) { _, isPresenting in
             if isPresenting {
                 keyboardTask?.cancel()
@@ -240,9 +229,7 @@ struct ContentView: View {
         .onChange(of: workflowManager.workflows) { _, _ in
             // 专注中的 Workflow 被删除或关闭时，清掉持久化的专注状态。
             guard !focusedWorkflowIDRaw.isEmpty, focusedWorkflow == nil else { return }
-            withAnimation(focusTransition) {
-                focusedWorkflowIDRaw = ""
-            }
+            focusedWorkflowIDRaw = ""
         }
     }
     
@@ -251,24 +238,21 @@ struct ContentView: View {
             || OffloadPermissionManager.shared.pendingRequest != nil
     }
 
-    private var focusTransition: Animation? {
-        reduceMotion ? nil : .easeInOut(duration: 0.2)
-    }
-
     private var toolbarFocusTransition: Animation? {
         reduceMotion ? nil : .spring(duration: 0.42, bounce: 0.08)
     }
 
     private var bottomToolbar: some View {
         VStack(spacing: 8) {
-            if let workflowID = visibleLoadingWorkflowId,
+            if !isFocusMode,
+               let workflowID = visibleLoadingWorkflowId,
                let workflow = workflowManager.workflows.first(where: { $0.id == workflowID }) {
                 Text("正在运行“\(workflow.name)”：第 \(workflowManager.currentNodeIndex + 1) 步，共 \(workflow.nodes.filter(\.isEnabled).count) 步")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 20)
-            } else if let statusMessage {
+            } else if !isFocusMode, let statusMessage {
                 Text(statusMessage)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -355,7 +339,7 @@ struct ContentView: View {
     }
 
     private var canRestoreDraft: Bool {
-        draftText.isEmpty && (historyManager.hasLastClearedText || !lastClearedTags.isEmpty)
+        draftText.isEmpty && selectedTags.isEmpty && historyManager.hasRestorableDraft
     }
 
     private var clearDraftLabel: String {
@@ -399,7 +383,7 @@ struct ContentView: View {
         }
         .accessibilityLabel(isFocusMode ? "退出专注" : "草稿标签")
         .accessibilityValue(isFocusMode ? "" : (selectedTags.isEmpty ? "未选择" : selectedTags.joined(separator: "、")))
-        .accessibilityHint(isFocusMode ? "显示导航和其他工作流" : "")
+        .accessibilityHint(isFocusMode ? "显示其他工作流" : "")
         .accessibilityFocused($accessibilityFocus, equals: .tags)
         .disabled(processingWorkflowId != nil)
     }
@@ -487,9 +471,9 @@ struct ContentView: View {
             }
             .frame(maxWidth: Design.readingWidth, maxHeight: .infinity)
             .frame(maxWidth: .infinity)
-            .padding(.top, isFocusMode ? 0 : 12)
+            .padding(.top, 12)
 
-            if draftText.isEmpty && historyManager.savedItems.isEmpty && !isFocusMode {
+            if !isFocusMode && draftText.isEmpty && historyManager.savedItems.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("草稿随输入自动保存。添加“保存记录”步骤后，就能在记录列表中回顾。")
                         .font(.footnote)
@@ -569,20 +553,15 @@ struct ContentView: View {
 
     private func clearText() {
         let announcement = canRestoreDraft ? "已\(clearDraftLabel)" : "已\(clearDraftLabel)，可以撤销"
-        if draftText.isEmpty {
+        if canRestoreDraft {
             if historyManager.hasLastClearedText {
                 interruptDraftInputSession()
-                historyManager.restoreLastClearedDraft()
-            } else if !lastClearedTags.isEmpty {
-                let tags = lastClearedTags
-                lastClearedTags = []
-                for tag in tags { historyManager.addTag(to: historyManager.currentDraft.id, tagName: tag) }
-            } else {
-                lastClearedTags = selectedTags
-                historyManager.clearDraftTags()
             }
+            historyManager.restoreLastClearedDraft()
         } else {
-            interruptDraftInputSession()
+            if !draftText.isEmpty {
+                interruptDraftInputSession()
+            }
             historyManager.clearDraft()
         }
         showStatus(announcement)
@@ -591,9 +570,7 @@ struct ContentView: View {
     private func enterFocusMode(_ workflow: Workflow, fromLongPress: Bool = false) {
         guard workflow.kind == .manual, processingWorkflowId == nil else { return }
         suppressNextWorkflowTap = fromLongPress
-        withAnimation(focusTransition) {
-            focusedWorkflowIDRaw = workflow.id.uuidString
-        }
+        focusedWorkflowIDRaw = workflow.id.uuidString
     }
 
     private func exitFocusMode(fromLongPress: Bool = false) {
@@ -601,9 +578,7 @@ struct ContentView: View {
         if fromLongPress {
             suppressNextWorkflowTap = true
         }
-        withAnimation(focusTransition) {
-            focusedWorkflowIDRaw = ""
-        }
+        focusedWorkflowIDRaw = ""
     }
 
     private func handleWorkflowTap(_ workflow: Workflow) {
@@ -617,6 +592,9 @@ struct ContentView: View {
 
     private func performWorkflowSend(_ workflow: Workflow) {
         if draftText.isEmpty {
+            if !selectedTags.isEmpty {
+                historyManager.clearDraft()
+            }
             enqueueSend {
                 await sendReturnKey(for: workflow)
             }
@@ -705,7 +683,7 @@ struct ContentView: View {
 
             if result.shouldSave {
                 if draftText.isEmpty {
-                    performSave(text: result.finalText)
+                    performSave(text: result.finalText, tags: result.tags)
                 } else {
                     historyManager.addRecord(result.finalText, tags: result.tags)
                 }
@@ -727,8 +705,9 @@ struct ContentView: View {
         }
     }
     
-    private func performSave(text: String) {
+    private func performSave(text: String, tags: [String]) {
         historyManager.updateDraftText(text)
+        historyManager.replaceDraftTags(tags)
         historyManager.finalizeDraft()
     }
 
@@ -738,7 +717,6 @@ struct ContentView: View {
 }
 
 struct DraftTextView: UIViewRepresentable {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var text: String
     @Binding var isFocused: Bool
     let inputSessionResetToken: Int
@@ -747,8 +725,8 @@ struct DraftTextView: UIViewRepresentable {
     var returnKeyType: UIReturnKeyType = .default
     var onReturnKeySubmit: (() -> Void)?
     
-    func makeUIView(context: Context) -> DraftEditorTextView {
-        let textView = DraftEditorTextView()
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
         textView.font = font
@@ -768,7 +746,7 @@ struct DraftTextView: UIViewRepresentable {
         return textView
     }
     
-    func updateUIView(_ uiView: DraftEditorTextView, context: Context) {
+    func updateUIView(_ uiView: UITextView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.resetInputSessionIfNeeded(on: uiView)
         context.coordinator.syncTextIfNeeded(on: uiView)
@@ -800,9 +778,8 @@ struct DraftTextView: UIViewRepresentable {
         Coordinator(self)
     }
 
-    static func dismantleUIView(_ uiView: DraftEditorTextView, coordinator: Coordinator) {
+    static func dismantleUIView(_ uiView: UITextView, coordinator: Coordinator) {
         coordinator.cancelPendingUpdates()
-        uiView.endCaretStabilization()
         uiView.delegate = nil
     }
     
@@ -825,9 +802,8 @@ struct DraftTextView: UIViewRepresentable {
             self.appliedReturnKeyType = parent.returnKeyType
         }
 
-        func applyReturnKeyTypeIfNeeded(on textView: DraftEditorTextView) {
+        func applyReturnKeyTypeIfNeeded(on textView: UITextView) {
             guard appliedReturnKeyType != parent.returnKeyType || textView.returnKeyType != parent.returnKeyType else { return }
-            textView.beginCaretStabilization()
             textView.returnKeyType = parent.returnKeyType
             appliedReturnKeyType = parent.returnKeyType
             scheduleKeyboardAppearanceRefresh(on: textView)
@@ -849,8 +825,8 @@ struct DraftTextView: UIViewRepresentable {
             }
         }
 
-        /// 中文九宫格会忽略 `reloadInputViews()`；进出专注又包在 SwiftUI 动画事务里，必须跳出事务并短暂交接 first responder，键盘才会改键帽。
-        private func scheduleKeyboardAppearanceRefresh(on textView: DraftEditorTextView) {
+        /// 中文九宫格会忽略 `reloadInputViews()`；在 SwiftUI 更新完成后短暂交接 first responder，确保键盘更新回车键样式。
+        private func scheduleKeyboardAppearanceRefresh(on textView: UITextView) {
             keyboardRefreshGeneration &+= 1
             let generation = keyboardRefreshGeneration
             DispatchQueue.main.async { [weak self, weak textView] in
@@ -859,13 +835,12 @@ struct DraftTextView: UIViewRepresentable {
             }
         }
 
-        private func refreshKeyboardAppearance(on textView: DraftEditorTextView) {
+        private func refreshKeyboardAppearance(on textView: UITextView) {
             textView.returnKeyType = parent.returnKeyType
             appliedReturnKeyType = parent.returnKeyType
 
             let shouldKeepKeyboard = textView.isFirstResponder || parent.isFocused
             guard shouldKeepKeyboard, textView.window != nil else {
-                textView.endCaretStabilization()
                 textView.reloadInputViews()
                 return
             }
@@ -876,7 +851,6 @@ struct DraftTextView: UIViewRepresentable {
             defer {
                 UIView.setAnimationsEnabled(animationsWereEnabled)
                 isRefreshingKeyboard = false
-                textView.resumeCaretBlinking(after: parent.reduceMotion ? .zero : .milliseconds(500))
             }
 
             let probe = UITextView()
@@ -943,10 +917,6 @@ struct DraftTextView: UIViewRepresentable {
             parent.text = textView.text
         }
 
-        func textViewDidChangeSelection(_ textView: UITextView) {
-            (textView as? DraftEditorTextView)?.updateCaretStabilization()
-        }
-        
         func textViewDidBeginEditing(_ textView: UITextView) {
             guard !isRefreshingKeyboard, !isApplyingFocusUpdate else { return }
             if !parent.isFocused {
@@ -955,108 +925,13 @@ struct DraftTextView: UIViewRepresentable {
         }
         
         func textViewDidEndEditing(_ textView: UITextView) {
-            guard !isRefreshingKeyboard else { return }
-            (textView as? DraftEditorTextView)?.endCaretStabilization()
-            guard !isApplyingFocusUpdate else { return }
+            guard !isRefreshingKeyboard, !isApplyingFocusUpdate else { return }
             if parent.isFocused {
                 parent.isFocused = false
             }
         }
     }
 }
-
-final class DraftEditorTextView: UITextView {
-    private var isStabilizingCaret = false
-    private var caretBlinkResumeTask: Task<Void, Never>?
-    private let transitionCursor = DraftTextCursorView()
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        if let selectionDisplay = interactions.compactMap({ $0 as? UITextSelectionDisplayInteraction }).first,
-           selectionDisplay.cursorView !== transitionCursor {
-            selectionDisplay.cursorView = transitionCursor
-            selectionDisplay.setNeedsSelectionUpdate()
-        }
-        updateCaretStabilization()
-    }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if window == nil { endCaretStabilization() }
-    }
-
-    func beginCaretStabilization() {
-        caretBlinkResumeTask?.cancel()
-        caretBlinkResumeTask = nil
-        guard isFirstResponder, window != nil else {
-            endCaretStabilization()
-            return
-        }
-        isStabilizingCaret = true
-        updateCaretStabilization()
-    }
-
-    func resumeCaretBlinking(after delay: Duration) {
-        guard isStabilizingCaret else { return }
-        layoutIfNeeded()
-        updateCaretStabilization()
-        caretBlinkResumeTask?.cancel()
-        caretBlinkResumeTask = Task { @MainActor [weak self] in
-            do {
-                if delay > .zero { try await Task.sleep(for: delay) }
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
-            self?.endCaretStabilization()
-        }
-    }
-
-    func endCaretStabilization() {
-        caretBlinkResumeTask?.cancel()
-        caretBlinkResumeTask = nil
-        isStabilizingCaret = false
-        transitionCursor.isStabilizing = false
-    }
-
-    func updateCaretStabilization() {
-        transitionCursor.isStabilizing = isStabilizingCaret && window != nil && selectedTextRange?.isEmpty == true
-    }
-}
-
-/// Keep UIKit's cursor drawing and geometry, but defer its hide/blink requests during a mode transition.
-final class DraftTextCursorView: UIStandardTextCursorView {
-    private var requestedBlinking = false
-    private var requestedHidden = true
-
-    var isStabilizing = false {
-        didSet {
-            guard isStabilizing != oldValue else { return }
-            super.isHidden = isStabilizing ? false : requestedHidden
-            super.isBlinking = isStabilizing ? false : requestedBlinking
-            if isStabilizing || (requestedBlinking && !requestedHidden) {
-                resetBlinkAnimation()
-            }
-        }
-    }
-
-    override var isBlinking: Bool {
-        get { super.isBlinking }
-        set {
-            requestedBlinking = newValue
-            super.isBlinking = isStabilizing ? false : newValue
-        }
-    }
-
-    override var isHidden: Bool {
-        get { super.isHidden }
-        set {
-            requestedHidden = newValue
-            super.isHidden = isStabilizing ? false : newValue
-        }
-    }
-}
-
 
 #Preview {
     ContentView()

@@ -95,24 +95,15 @@ class TagManager {
     
     private(set) var tagCounts: [String: Int] = [:]
     
-    private(set) var lastSelectedTags: [String] = []
-    
-    private let lastSelectedTagsKey = "lastSelectedTags"
-    private let lastSelectedTagsTimeKey = "lastSelectedTagsTime"
     private let cachedTagsKey = "cachedTags"
     
-    private let tagMemoryExpiration: TimeInterval = 30 * 60
-    
     private init() {
-        loadLastSelectedTags()
         loadCachedTags()
     }
     
     func reload() {
         tags = []
         tagCounts = [:]
-        lastSelectedTags = []
-        loadLastSelectedTags()
         loadCachedTags()
     }
 
@@ -163,32 +154,6 @@ class TagManager {
     func getTag(by name: String) -> String? {
         tags.first { $0 == name }
     }
-    
-    private func loadLastSelectedTags() {
-        let savedTime = AppDefaults.current.double(forKey: lastSelectedTagsTimeKey)
-        if savedTime > 0 {
-            let elapsed = Date().timeIntervalSince1970 - savedTime
-            if elapsed > tagMemoryExpiration {
-                lastSelectedTags = []
-                return
-            }
-        }
-        
-        guard let data = AppDefaults.current.data(forKey: lastSelectedTagsKey),
-              let savedTags = try? JSONDecoder().decode([String].self, from: data) else {
-            lastSelectedTags = []
-            return
-        }
-        lastSelectedTags = savedTags
-    }
-    
-    func saveLastSelectedTags(_ tags: [String]) {
-        lastSelectedTags = tags
-        if let data = try? JSONEncoder().encode(tags) {
-            AppDefaults.current.set(data, forKey: lastSelectedTagsKey)
-            AppDefaults.current.set(Date().timeIntervalSince1970, forKey: lastSelectedTagsTimeKey)
-        }
-    }
 }
 
 @MainActor
@@ -198,6 +163,7 @@ class HistoryManager {
     
     var items: [HistoryItem] = []
     private(set) var lastClearedText: String = ""
+    private(set) var lastClearedTags: [String] = []
     var isLoading = false
     private(set) var hasLoadedHistory = false
     private(set) var isUsingLocalFallback = false
@@ -242,6 +208,10 @@ class HistoryManager {
     var hasLastClearedText: Bool {
         !lastClearedText.isEmpty
     }
+
+    var hasRestorableDraft: Bool {
+        !lastClearedText.isEmpty || !lastClearedTags.isEmpty
+    }
     
     private func ensureDraftExists() {
         if !items.contains(where: { $0.isDraft }) {
@@ -251,41 +221,49 @@ class HistoryManager {
     }
     
     private func createNewDraft() -> HistoryItem {
-        return HistoryItem(tags: TagManager.shared.lastSelectedTags, isDraft: true)
+        return HistoryItem(isDraft: true)
+    }
+
+    private func discardLastClearedDraft() {
+        lastClearedText = ""
+        lastClearedTags = []
     }
     
     func updateDraftText(_ text: String) {
         guard let index = items.firstIndex(where: { $0.isDraft }) else { return }
         guard items[index].text != text else { return }
         if !text.isEmpty {
-            lastClearedText = ""
+            discardLastClearedDraft()
         }
         items[index].text = text
+        saveDraft()
+    }
+
+    func replaceDraftTags(_ tags: [String]) {
+        guard let index = items.firstIndex(where: { $0.isDraft }) else { return }
+        guard items[index].tags != tags else { return }
+        items[index].tags = tags
         saveDraft()
     }
 
     func clearDraft() {
         guard let index = items.firstIndex(where: { $0.isDraft }) else { return }
         let currentText = items[index].text
-        if !currentText.isEmpty {
-            lastClearedText = currentText
-        }
+        let currentTags = items[index].tags
+        guard !currentText.isEmpty || !currentTags.isEmpty else { return }
+        lastClearedText = currentText
+        lastClearedTags = currentTags
         items[index].text = ""
+        items[index].tags.removeAll()
         saveDraft()
     }
 
     func restoreLastClearedDraft() {
-        guard let index = items.firstIndex(where: { $0.isDraft }), !lastClearedText.isEmpty else { return }
-        items[index].text = lastClearedText
-        lastClearedText = ""
-        saveDraft()
-    }
-
-    func clearDraftTags() {
         guard let index = items.firstIndex(where: { $0.isDraft }) else { return }
-        guard !items[index].tags.isEmpty else { return }
-
-        items[index].tags.removeAll()
+        guard !lastClearedText.isEmpty || !lastClearedTags.isEmpty else { return }
+        items[index].text = lastClearedText
+        items[index].tags = lastClearedTags
+        discardLastClearedDraft()
         saveDraft()
     }
     
@@ -294,11 +272,8 @@ class HistoryManager {
               !items[draftIndex].text.isEmpty else { return }
         
         let draft = items[draftIndex]
-        if !draft.text.isEmpty {
-            lastClearedText = draft.text
-        }
-        
-        TagManager.shared.saveLastSelectedTags(draft.tags)
+        lastClearedText = draft.text
+        lastClearedTags = draft.tags
         
         let now = Date.now
         let fileName = generateFileName(for: now)
@@ -919,6 +894,7 @@ class HistoryManager {
         if !items[index].tags.contains(trimmedTag) {
             items[index].tags.append(trimmedTag)
             if items[index].isDraft {
+                discardLastClearedDraft()
                 saveDraft()
             } else {
                 saveItem(items[index])
@@ -933,6 +909,7 @@ class HistoryManager {
         
         items[index].tags.removeAll { $0 == tagName }
         if items[index].isDraft {
+            discardLastClearedDraft()
             saveDraft()
         } else {
             saveItem(items[index])
@@ -950,6 +927,7 @@ class HistoryManager {
             items[index].tags.append(tagName)
         }
         if items[index].isDraft {
+            discardLastClearedDraft()
             saveDraft()
         } else {
             saveItem(items[index])
@@ -972,6 +950,7 @@ class HistoryManager {
             guard !items[index].tags.contains(trimmedTag) else { continue }
             items[index].tags.append(trimmedTag)
             if items[index].isDraft {
+                discardLastClearedDraft()
                 saveDraft()
             } else {
                 saveItem(items[index])
@@ -987,6 +966,7 @@ class HistoryManager {
             guard items[index].tags.contains(tagName) else { continue }
             items[index].tags.removeAll { $0 == tagName }
             if items[index].isDraft {
+                discardLastClearedDraft()
                 saveDraft()
             } else {
                 saveItem(items[index])
@@ -1007,6 +987,7 @@ class HistoryManager {
                     .map { $0 == oldName ? trimmedNewName : $0 }
                     .filter { seen.insert($0).inserted }
                 if items[index].isDraft {
+                    discardLastClearedDraft()
                     saveDraft()
                 } else {
                     saveItem(items[index])
@@ -1047,6 +1028,7 @@ class HistoryManager {
         _cachedStorage = nil
         items = []
         lastClearedText = ""
+        lastClearedTags = []
         hasLoadedHistory = false
         isUsingLocalFallback = false
         hasPendingICloudDownloads = false
