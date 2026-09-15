@@ -10,3 +10,6 @@ apps/macos/dist/
 
 # Local Codex environment state
 .codex/environments/
+
+# macOS Finder metadata
+.DS_Store

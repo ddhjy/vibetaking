@@ -77,15 +77,6 @@
 
 ## 修改后截图
 
-以下均为运行中的 iOS 26 模拟器截图。
-
-| 场景 | 截图 |
-| --- | --- |
-| 首页 · 浅色 | [查看截图](hig-screenshots/home-light.png) |
-| 记录列表 · 浅色 | [查看截图](hig-screenshots/history-light.png) |
-| AI 助手 · 浅色 | [查看截图](hig-screenshots/ai-light.png) |
-| 首页与键盘 · 375 pt / 最大辅助功能字号 / 深色高对比度 | [查看截图](hig-screenshots/home-small-accessibility.png) |
-| 记录筛选 · 375 pt / 最大辅助功能字号 / 深色高对比度 | [查看截图](hig-screenshots/history-small-accessibility.png) |
-| 统计日期列表 · 375 pt / 最大辅助功能字号 / 深色高对比度 | [查看截图](hig-screenshots/statistics-small-accessibility.png) |
+审视时在 iOS 26 模拟器上截取了首页、记录列表、AI 助手的浅色截图，以及 375 pt 最大辅助功能字号、深色高对比度下的首页、记录筛选和统计日期列表。截图已随界面迭代移除，不再随仓库保存。
 
 后续界面修改遵循 [iOS 设计规范](../DESIGN.md)。

@@ -93,19 +93,6 @@
 - git diff --check 和两端 Info.plist 格式检查通过。Mac 端本次验证限于构建和代码检查。
 - 真实服务商返回、iCloud 多设备同步及系统日历／提醒事项真实数据写入不在本次实测范围。
 
-## 界面截图
-
-- [首次使用指引](ux-writing-screenshots/onboarding.png)
-- [记录空状态](ux-writing-screenshots/empty-records.png)
-- [工作流配置](ux-writing-screenshots/workflow.png)
-- [工作流完成反馈](ux-writing-screenshots/workflow-completed.png)
-- [标签搜索无结果](ux-writing-screenshots/tag-search.png)
-- [AI 首次使用](ux-writing-screenshots/ai-onboarding.png)
-- [AI 设置说明](ux-writing-screenshots/ai-settings.png)
-- [缺少密钥时保留输入](ux-writing-screenshots/ai-missing-key.png)
-- [工作流错误与修正入口](ux-writing-screenshots/workflow-error.png)
-- [最大字号的权限选项](ux-writing-screenshots/permissions-large-text.png)与[完整说明](ux-writing-screenshots/permissions-explanation-large-text.png)
-
 ## 第二轮审视与微文案优化 (2026-09-05)
 
 依据 Kinneret Yifrah 的《Microcopy: The Complete Guide》，对微文案的情绪、认知负荷、行动力与状态一致性做深度打磨：

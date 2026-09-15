@@ -56,4 +56,4 @@
 - 演示数据和配置已从走查前备份恢复，本机测试服务已停止。
 - 未进行真实云端 AI、iCloud 多设备同步、真机 VoiceOver / Switch Control 或真实设备数据写入验证。
 
-截图保存在 [walkthrough-screenshots](walkthrough-screenshots/)：专注模式、空工作流、HTTP 校验、小屏空记录、最大字号授权、最大字号 AI 回复。
+走查时截取了专注模式、空工作流、HTTP 校验、小屏空记录、最大字号授权、最大字号 AI 回复的截图，已随界面迭代移除，不再随仓库保存。
