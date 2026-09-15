@@ -242,8 +242,8 @@ nonisolated final class OpenAIResponsesAgentProvider: AgentProvider {
                             logger.error("response.incomplete — reason: \(reason)")
                             throw LLMError.providerError(
                                 message: reason == "max_output_tokens"
-                                    ? "回复达到长度上限，尚未完成。请缩小任务范围，或在会话中发送“继续”。"
-                                    : "这次回复提前中断。请稍后再试，或在会话中发送消息让助手继续。")
+                                    ? "回复达到长度上限，尚未完成。请缩小任务范围，或在对话中发送“继续”。"
+                                    : "这次回复提前中断。请稍后再试，或在对话中发送消息让助手继续。")
 
                         case "response.completed":
                             let response = event["response"] as? [String: Any]

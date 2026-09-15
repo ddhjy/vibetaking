@@ -398,12 +398,12 @@ class AIService {
 
         if trimmedBody.localizedCaseInsensitiveContains("error code: 1033")
             || trimmedBody.localizedCaseInsensitiveContains("cloudflare tunnel error") {
-            return "Sub2API 网关暂不可用（Cloudflare 1033），请检查 API 域名或隧道是否在线"
+            return "AI 服务地址暂时无法访问。请确认服务在线，稍后再试一次。"
         }
 
         if trimmedBody.localizedCaseInsensitiveContains("<!doctype html")
             || trimmedBody.localizedCaseInsensitiveContains("<html") {
-            return "服务返回了 HTML 错误页，请检查 Sub2API 网关地址是否可用"
+            return "AI 服务地址返回的是网页而不是接口。请检查设置中的服务地址是否完整。"
         }
 
         return String(trimmedBody.prefix(180))

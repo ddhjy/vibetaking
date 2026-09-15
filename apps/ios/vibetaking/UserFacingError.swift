@@ -20,7 +20,7 @@ nonisolated enum UserFacingError {
         case 413:
             return "这次发送的内容超过 AI 服务限制。请缩短内容，或分几次处理。"
         case 429:
-            return "AI 服务暂时限制了请求。请稍后再试；如果仍出现此提示，请向服务商检查可用额度。"
+            return "AI 服务暂时限制了请求。请稍后再试；如果仍然出现，请到服务商处确认剩余额度。"
         case 500...599:
             return "AI 服务暂时不可用。请稍后再试；如果持续失败，请联系服务商。"
         default:

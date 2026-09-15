@@ -147,7 +147,8 @@ struct WorkflowConfigView: View {
                                 activateWorkflowDetail(workflow.id)
                             }
                     } else {
-                        ContentUnavailableView("工作流已被删除", systemImage: "exclamationmark.triangle")
+                        ContentUnavailableView("工作流已被删除", systemImage: "exclamationmark.triangle",
+                                               description: Text("可以从列表中选择其他工作流，或新建一个。"))
                     }
                 }
         }
@@ -189,7 +190,7 @@ struct WorkflowConfigView: View {
         .navigationTitle("工作流")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.fontWeight(.semibold) }
             WorkflowEditToolbarItem()
         }
     }
@@ -246,7 +247,7 @@ struct WorkflowConfigView: View {
         .navigationTitle("工作流")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.fontWeight(.semibold) }
             WorkflowEditToolbarItem()
         }
     }
@@ -434,7 +435,8 @@ struct WorkflowConfigView: View {
                 EditNodeSheet(node: node)
             } else {
                 NavigationStack {
-                    ContentUnavailableView("步骤已被删除", systemImage: "exclamationmark.triangle")
+                    ContentUnavailableView("步骤已被删除", systemImage: "exclamationmark.triangle",
+                                           description: Text("这个步骤已不存在。关闭后可在工作流中查看当前步骤。"))
                         .navigationTitle("编辑步骤")
                         .navigationBarTitleDisplayMode(.inline)
                 }
@@ -847,7 +849,7 @@ struct EditNodeSheet: View {
             .onDisappear { deviceResolutionTask?.cancel() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    if hasEditableConfiguration { Button("放弃修改") { dismiss() } }
+                    if hasEditableConfiguration { Button("取消") { dismiss() } }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     if hasEditableConfiguration {

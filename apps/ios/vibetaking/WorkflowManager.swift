@@ -78,7 +78,7 @@ struct Workflow: Identifiable, Codable, Equatable {
     var configurationIssue: String? {
         let enabledNodes = nodes.filter(\.isEnabled)
         guard !enabledNodes.isEmpty else {
-            return "“\(name)”还没有启用的步骤。请在工作流设置中添加并启用步骤后重试。"
+            return "还没有启用的步骤。请添加并启用至少一个步骤，再运行。"
         }
         for node in enabledNodes {
             let prompt: String?
@@ -88,7 +88,7 @@ struct Workflow: Identifiable, Codable, Equatable {
             default: continue
             }
             if prompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
-                return "请先在“\(name)”中填写“\(node.type.displayName)”步骤的指令。草稿已保留。"
+                return "请先填写“\(node.type.displayName)”步骤的指令。草稿已保留。"
             }
         }
         return nil

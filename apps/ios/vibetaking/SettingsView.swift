@@ -349,14 +349,14 @@ struct SettingsView: View {
                     if isExportingConfiguration || isImportingConfiguration {
                         HStack(spacing: 12) {
                             ProgressView()
-                            Text(isExportingConfiguration ? "正在导出配置" : "正在导入配置")
+                            Text(isExportingConfiguration ? "正在导出配置…" : "正在导入配置…")
                                 .foregroundStyle(.secondary)
                         }
                     }
                 } header: {
                     Text("配置迁移")
                 } footer: {
-                    Text("导出包含 AI 设置、全部工作流和可直接读取的密钥，仅存放或传给你信任的设备。导入会替换这些设置，记录不受影响。")
+                    Text("导出文件包含全部工作流和 AI 设置，其中 AI 密钥为明文，请只传给你信任的设备。导入会替换当前设置，记录不受影响。")
                 }
 
                 if shouldShowHiddenToolsSection {
@@ -406,7 +406,7 @@ struct SettingsView: View {
             .scrollDismissesKeyboard(.interactively)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("关闭设置") { dismiss() }.fontWeight(.semibold)
+                    Button("完成") { dismiss() }.fontWeight(.semibold)
                 }
             }
             .confirmationDialog("替换当前配置？", isPresented: $confirmConfigurationImport, titleVisibility: .visible) {
@@ -599,7 +599,10 @@ struct AgentSkillsSettingsView: View {
                 ContentUnavailableView {
                     Label("还没有助手技能", systemImage: "sparkles")
                 } description: {
-                    Text("技能让助手复用任务指引。在记录目录中按“_skills/技能名/SKILL.md”存放文件，再刷新技能列表。")
+                    Text("技能是助手可复用的任务指引。在 iCloud 记录文件夹中新建 _skills 文件夹，为每个技能建一个子文件夹并放入 SKILL.md，然后刷新列表。")
+                } actions: {
+                    Button("刷新技能列表", systemImage: "arrow.clockwise") { store.reload() }
+                        .buttonStyle(.bordered)
                 }
                 .listRowBackground(Color.clear)
             } else {

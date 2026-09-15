@@ -664,7 +664,7 @@ struct HistoryView: View {
         ContentUnavailableView {
             Label("没有匹配的记录", systemImage: "line.3.horizontal.decrease.circle")
         } description: {
-            Text("当前标签组合下没有记录。减少筛选条件，或清除标签筛选查看其他记录。")
+            Text("没有同时带有这些标签的记录。可以减少标签，或清除筛选查看全部记录。")
         } actions: {
             Button("清除标签筛选") { selectedTags = [] }.buttonStyle(.bordered)
         }
@@ -676,7 +676,7 @@ struct HistoryView: View {
         } description: {
             Text("试试更短的关键词。用空格分隔时，只显示同时匹配所有关键词的记录。")
         } actions: {
-            Button("清除搜索与筛选") {
+            Button(selectedTags.isEmpty ? "清除搜索" : "清除搜索与筛选") {
                 searchText = ""
                 committedSearchText = ""
                 selectedTags = []

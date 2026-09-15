@@ -108,7 +108,7 @@ class AgentEngine {
             // No tool calls → the model has finished its answer.
             guard turn.stopReason == .toolUse, !turn.toolEntries.isEmpty else {
                 if turn.stopReason == .refusal {
-                    throw LLMError.providerError(message: "AI 服务无法协助这次请求。可以尝试其他记录整理任务。")
+                    throw LLMError.providerError(message: "AI 服务无法完成这次请求。可以换一种说法，或尝试其他记录整理任务。")
                 }
                 break
             }

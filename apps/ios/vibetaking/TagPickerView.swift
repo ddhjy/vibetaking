@@ -177,7 +177,7 @@ struct TagPickerView: View {
                     TagRecommendationStatus(isLoading: isRecommendingTags, message: recommendationMessage)
                 } footer: {
                     if !displayedTags.isEmpty {
-                        Text("已选择 \(selectedTagCount) 个标签，关闭时自动保存。")
+                        Text("已选择 \(selectedTagCount) 个标签，关闭时应用到这条记录。")
                     }
                 }
             }

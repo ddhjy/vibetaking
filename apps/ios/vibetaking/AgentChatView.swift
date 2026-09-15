@@ -466,11 +466,10 @@ struct AgentChatView: View {
                     .foregroundStyle(.secondary)
                     .frame(minHeight: 44)
             }
-        case .toolCall(let name, let title, let status, let result, let isError):
+        case .toolCall(_, let title, let status, let result, let isError):
             let statusLabel = status == .running ? "正在执行" : (status == .done ? "已完成" : "执行失败")
             DisclosureGroup {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("工具：\(name)").font(.caption).foregroundStyle(.secondary)
                     if !result.isEmpty {
                         Text(result)
                             .font(.system(.footnote, design: .monospaced))
@@ -584,7 +583,7 @@ struct AgentSessionListView: View {
                         onSelect(session)
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(session.title.isEmpty ? "未命名对话" : session.title)
+                            Text(session.title.isEmpty ? "新对话" : session.title)
                                 .font(.body)
                                 .lineLimit(2)
                                 .foregroundStyle(.primary)
