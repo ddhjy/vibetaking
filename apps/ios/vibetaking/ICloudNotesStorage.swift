@@ -125,10 +125,16 @@ nonisolated enum ICloudNotesStorage {
     }
 
     nonisolated static func isUbiquitousItem(at url: URL) -> Bool {
-        (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true
+        guard url.path.contains("/Mobile Documents/") || url.path.contains("/com~apple~CloudDocs/") else {
+            return false
+        }
+        return (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true
     }
 
     nonisolated static func needsDownload(at url: URL) -> Bool {
+        guard url.path.contains("/Mobile Documents/") || url.path.contains("/com~apple~CloudDocs/") else {
+            return false
+        }
         guard let status = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]).ubiquitousItemDownloadingStatus else {
             return false
         }

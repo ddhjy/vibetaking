@@ -23,11 +23,24 @@ nonisolated struct HistoryItem: Identifiable, Equatable, Sendable {
         self.isDownloading = isDownloading
     }
     
-    var preview: String {
-        if text.count <= 200 {
-            return text
+    private static let previewLength = 200
+
+    /// Walks at most `previewLength` characters instead of counting the whole text.
+    private var previewCutoff: String.Index? {
+        guard let cutoff = text.index(text.startIndex, offsetBy: Self.previewLength, limitedBy: text.endIndex),
+              cutoff < text.endIndex else {
+            return nil
         }
-        return String(text.prefix(200)) + "..."
+        return cutoff
+    }
+
+    var isLongText: Bool {
+        previewCutoff != nil
+    }
+
+    var preview: String {
+        guard let cutoff = previewCutoff else { return text }
+        return String(text[..<cutoff]) + "..."
     }
     
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {
@@ -156,6 +169,24 @@ class TagManager {
     }
 }
 
+/// Serializes draft file writes off the main thread. Out-of-order arrivals are dropped
+/// because a newer sequence has already superseded them.
+private actor DraftFileWriter {
+    private var lastSequence: UInt64 = 0
+
+    func write(sequence: UInt64, content: String, to url: URL) {
+        guard sequence > lastSequence else { return }
+        lastSequence = sequence
+        try? content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    func remove(sequence: UInt64, at url: URL, fileManager: FileManager) {
+        guard sequence > lastSequence else { return }
+        lastSequence = sequence
+        try? fileManager.removeItem(at: url)
+    }
+}
+
 @MainActor
 @Observable
 class HistoryManager {
@@ -172,6 +203,13 @@ class HistoryManager {
     private var pendingReloadReevaluatesStorage: Bool?
     private var noteCache: [String: NoteCacheEntry] = [:]
     private var snapshotWriteTask: Task<Void, Never>?
+
+    /// Typing coalesces into one write after this pause. Tag edits and clears write right away.
+    private static let draftWriteDelay: Duration = .milliseconds(400)
+    @ObservationIgnored private let draftWriter = DraftFileWriter()
+    @ObservationIgnored private var draftWriteSequence: UInt64 = 0
+    @ObservationIgnored private var draftWriteTask: Task<Void, Never>?
+    @ObservationIgnored private var inFlightDraftWrites = 0
     
     private var _cachedStorage: ICloudNotesStorage.Resolution?
     
@@ -236,7 +274,7 @@ class HistoryManager {
             discardLastClearedDraft()
         }
         items[index].text = text
-        saveDraft()
+        saveDraft(afterDelay: Self.draftWriteDelay)
     }
 
     func replaceDraftTags(_ tags: [String]) {
@@ -301,6 +339,11 @@ class HistoryManager {
     var savedItems: [HistoryItem] {
         items.filter { !$0.isDraft }
     }
+
+    /// Cheap check for the empty state; avoids copying the whole list on every draft edit.
+    var hasSavedItems: Bool {
+        items.contains { !$0.isDraft }
+    }
     
     func getSavedItems(filteredBy tagName: String?) -> [HistoryItem] {
         var result = savedItems
@@ -325,7 +368,7 @@ class HistoryManager {
             .filter { item in
                 item.id != itemId
                     && !item.tags.isEmpty
-                    && !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && item.text.contains { !$0.isWhitespace }
             }
             .sorted { $0.createdAt > $1.createdAt }
             .prefix(boundedLimit)
@@ -338,39 +381,66 @@ class HistoryManager {
             }
     }
     
-    private func saveDraft() {
-        guard let draft = items.first(where: { $0.isDraft }) else { return }
-        
-        let content = generateMarkdownContent(
-            text: draft.text,
-            description: String(draft.text.prefix(50)),
-            tags: draft.tags,
-            createdAt: draft.createdAt
-        )
-        
-        let fileURL = storageURL.appendingPathComponent(draftFileName)
-        try? content.write(to: fileURL, atomically: true, encoding: .utf8)
-    }
-    
-    private func loadDraft() -> HistoryItem? {
-        let fileURL = storageURL.appendingPathComponent(draftFileName)
-        
-        guard fileManager.fileExists(atPath: fileURL.path),
-              let content = try? String(contentsOf: fileURL, encoding: .utf8),
-              let parsed = parseMarkdownFile(content: content) else {
-            return nil
+    /// Persists the draft off the main thread. With a delay, rapid edits collapse into one write.
+    private func saveDraft(afterDelay delay: Duration? = nil) {
+        draftWriteTask?.cancel()
+        draftWriteTask = nil
+        guard let delay else {
+            enqueueDraftWrite()
+            return
         }
-        
-        return HistoryItem(
-            text: parsed.body,
-            tags: parsed.tags,
-            isDraft: true
-        )
+        draftWriteTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            self?.draftWriteTask = nil
+            self?.enqueueDraftWrite()
+        }
+    }
+
+    /// True while a debounced or in-flight draft write has not reached disk yet.
+    private var hasPendingDraftWrite: Bool {
+        draftWriteTask != nil || inFlightDraftWrites > 0
+    }
+
+    /// Writes whatever is pending right now; call when the scene resigns active.
+    func flushPendingDraftWrite() {
+        guard draftWriteTask != nil else { return }
+        draftWriteTask?.cancel()
+        draftWriteTask = nil
+        enqueueDraftWrite()
+    }
+
+    private func enqueueDraftWrite() {
+        guard let draft = items.first(where: { $0.isDraft }) else { return }
+        let stamp = dateFormatter.string(from: draft.createdAt)
+        let fileURL = storageURL.appendingPathComponent(draftFileName)
+        draftWriteSequence &+= 1
+        let sequence = draftWriteSequence
+        let text = draft.text
+        let tags = draft.tags
+        inFlightDraftWrites += 1
+        Task(priority: .userInitiated) { [draftWriter] in
+            let content = Self.generateMarkdownContent(
+                text: text,
+                description: String(text.prefix(50)),
+                tags: tags,
+                createdAtStamp: stamp
+            )
+            await draftWriter.write(sequence: sequence, content: content, to: fileURL)
+            await MainActor.run { self.inFlightDraftWrites -= 1 }
+        }
     }
     
     private func deleteDraftFile() {
+        draftWriteTask?.cancel()
+        draftWriteTask = nil
         let fileURL = storageURL.appendingPathComponent(draftFileName)
-        try? fileManager.removeItem(at: fileURL)
+        draftWriteSequence &+= 1
+        let sequence = draftWriteSequence
+        let fileManager = self.fileManager
+        Task(priority: .userInitiated) { [draftWriter] in
+            await draftWriter.remove(sequence: sequence, at: fileURL, fileManager: fileManager)
+        }
     }
     
     private var storageURL: URL {
@@ -490,6 +560,53 @@ class HistoryManager {
         return (values?.contentModificationDate, values?.fileSize)
     }
 
+    nonisolated private struct PendingRead: Sendable {
+        let fileName: String
+        let fileURL: URL
+        let createdAt: Date
+        let modificationDate: Date?
+        let fileSize: Int?
+    }
+
+    nonisolated private struct ParsedNote: Sendable {
+        let description: String
+        let tags: [String]
+        let body: String
+    }
+
+    /// Reads and parses notes in parallel. iCloud directories are coordinated once as a whole
+    /// instead of paying one file-coordination round trip per note.
+    nonisolated private static func readAndParseNotes(
+        _ reads: [PendingRead],
+        in directoryURL: URL,
+        coordinated: Bool
+    ) -> [ParsedNote?] {
+        guard !reads.isEmpty else { return [] }
+
+        func parseAll() -> [ParsedNote?] {
+            let results = UnsafeMutableBufferPointer<ParsedNote?>.allocate(capacity: reads.count)
+            results.initialize(repeating: nil)
+            defer { results.deallocate() }
+            DispatchQueue.concurrentPerform(iterations: reads.count) { index in
+                guard let content = try? String(contentsOf: reads[index].fileURL, encoding: .utf8),
+                      let parsed = parseMarkdownFile(content: content) else { return }
+                results[index] = ParsedNote(description: parsed.description, tags: parsed.tags, body: parsed.body)
+            }
+            let collected = Array(results)
+            _ = results.deinitialize()
+            return collected
+        }
+
+        guard coordinated else { return parseAll() }
+
+        var parsed: [ParsedNote?]?
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: directoryURL, options: [], error: &coordinationError) { _ in
+            parsed = parseAll()
+        }
+        return parsed ?? parseAll()
+    }
+
     nonisolated private static func downloadingItem(
         fileName: String,
         createdAt: Date,
@@ -515,24 +632,19 @@ class HistoryManager {
         let dateFormatter = ICloudNotesStorage.makeNoteDateFormatter()
         var itemsByFileName: [String: HistoryItem] = [:]
         var cacheEntries: [String: NoteCacheEntry] = [:]
+        var pendingReads: [PendingRead] = []
+        let isCloud = resolution.kind == .iCloud
 
-        let fileURLs = (try? fileManager.contentsOfDirectory(
-            at: documentsURL,
-            includingPropertiesForKeys: [
-                .isRegularFileKey,
-                .isDirectoryKey,
-                .isUbiquitousItemKey,
-                .ubiquitousItemDownloadingStatusKey,
-                .contentModificationDateKey,
-                .fileSizeKey
-            ]
-        )) ?? []
+        // Filename-only listing. Requesting resource keys (especially ubiquitous ones)
+        // makes Foundation consult the file provider once per file.
+        let fileURLs = PerformanceLog.measure("history.load.list") {
+            (try? fileManager.contentsOfDirectory(
+                at: documentsURL,
+                includingPropertiesForKeys: []
+            )) ?? []
+        }
 
         for fileURL in fileURLs {
-            if (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                continue
-            }
-
             switch ICloudNotesStorage.classifyNoteFile(
                 fileName: fileURL.lastPathComponent,
                 draftFileName: draftFileName
@@ -561,22 +673,8 @@ class HistoryManager {
                     continue
                 }
 
-                if ICloudNotesStorage.needsDownload(at: fileURL) {
-                    ICloudNotesStorage.startDownloading(at: fileURL, fileManager: fileManager)
-                    if itemsByFileName[fileName] == nil {
-                        let cached = noteCache[fileName]
-                        itemsByFileName[fileName] = downloadingItem(
-                            fileName: fileName,
-                            createdAt: createdAt,
-                            cached: cached
-                        )
-                        if let cached {
-                            cacheEntries[fileName] = cached
-                        }
-                    }
-                    continue
-                }
-
+                // Evicted notes show up as `.icloud` placeholders above. A `.md` that is present
+                // is readable now; the metadata query fetches newer cloud versions in the background.
                 let stamp = fileStamp(at: fileURL)
                 if let cached = noteCache[fileName],
                    cached.matches(modificationDate: stamp.modificationDate, fileSize: stamp.fileSize) {
@@ -585,51 +683,67 @@ class HistoryManager {
                     continue
                 }
 
-                if let content = ICloudNotesStorage.readUTF8String(at: fileURL),
-                   let parsed = parseMarkdownFile(content: content) {
-                    itemsByFileName[fileName] = HistoryItem(
-                        fileName: fileName,
-                        text: parsed.body,
-                        createdAt: createdAt,
-                        description: parsed.description,
-                        tags: parsed.tags
+                pendingReads.append(PendingRead(
+                    fileName: fileName,
+                    fileURL: fileURL,
+                    createdAt: createdAt,
+                    modificationDate: stamp.modificationDate,
+                    fileSize: stamp.fileSize
+                ))
+            }
+        }
+
+        let parsedNotes = PerformanceLog.measure("history.load.parse", detail: "\(pendingReads.count) files") {
+            readAndParseNotes(pendingReads, in: documentsURL, coordinated: isCloud)
+        }
+        for (read, parsed) in zip(pendingReads, parsedNotes) {
+            if let parsed {
+                itemsByFileName[read.fileName] = HistoryItem(
+                    fileName: read.fileName,
+                    text: parsed.body,
+                    createdAt: read.createdAt,
+                    description: parsed.description,
+                    tags: parsed.tags
+                )
+                cacheEntries[read.fileName] = NoteCacheEntry(
+                    fileName: read.fileName,
+                    createdAt: read.createdAt,
+                    text: parsed.body,
+                    description: parsed.description,
+                    tags: parsed.tags,
+                    modificationDate: read.modificationDate,
+                    fileSize: read.fileSize
+                )
+            } else if ICloudNotesStorage.isUbiquitousItem(at: read.fileURL) {
+                ICloudNotesStorage.startDownloading(at: read.fileURL, fileManager: fileManager)
+                if itemsByFileName[read.fileName] == nil {
+                    let cached = noteCache[read.fileName]
+                    itemsByFileName[read.fileName] = downloadingItem(
+                        fileName: read.fileName,
+                        createdAt: read.createdAt,
+                        cached: cached
                     )
-                    cacheEntries[fileName] = NoteCacheEntry(
-                        fileName: fileName,
-                        createdAt: createdAt,
-                        text: parsed.body,
-                        description: parsed.description,
-                        tags: parsed.tags,
-                        modificationDate: stamp.modificationDate,
-                        fileSize: stamp.fileSize
-                    )
-                } else if ICloudNotesStorage.isUbiquitousItem(at: fileURL) {
-                    ICloudNotesStorage.startDownloading(at: fileURL, fileManager: fileManager)
-                    if itemsByFileName[fileName] == nil {
-                        let cached = noteCache[fileName]
-                        itemsByFileName[fileName] = downloadingItem(
-                            fileName: fileName,
-                            createdAt: createdAt,
-                            cached: cached
-                        )
-                        if let cached {
-                            cacheEntries[fileName] = cached
-                        }
+                    if let cached {
+                        cacheEntries[read.fileName] = cached
                     }
                 }
             }
         }
 
-        startDownloadingDraftIfNeeded(
-            documentsURL: documentsURL,
-            draftFileName: draftFileName,
-            fileManager: fileManager
-        )
+        if isCloud {
+            startDownloadingDraftIfNeeded(
+                documentsURL: documentsURL,
+                draftFileName: draftFileName,
+                fileManager: fileManager
+            )
+        }
 
         let draftURL = documentsURL.appendingPathComponent(draftFileName)
         var loadedDraft: HistoryItem?
-        if let content = ICloudNotesStorage.readUTF8String(at: draftURL),
-           let parsed = parseMarkdownFile(content: content) {
+        let draftContent = isCloud
+            ? ICloudNotesStorage.readUTF8String(at: draftURL)
+            : (try? String(contentsOf: draftURL, encoding: .utf8))
+        if let content = draftContent, let parsed = parseMarkdownFile(content: content) {
             loadedDraft = HistoryItem(
                 text: parsed.body,
                 tags: parsed.tags,
@@ -710,8 +824,9 @@ class HistoryManager {
         }
 
         // Keep any edits made before disk load finishes, otherwise adopt disk draft.
+        // A write that has not landed yet means the file on disk is older than memory.
         let liveDraft = currentDraft
-        let hasLiveDraftEdits = !liveDraft.text.isEmpty || !liveDraft.tags.isEmpty
+        let hasLiveDraftEdits = !liveDraft.text.isEmpty || !liveDraft.tags.isEmpty || hasPendingDraftWrite
         let mergedDraft = hasLiveDraftEdits ? liveDraft : (result.draft ?? liveDraft)
 
         items = [mergedDraft] + loadedItems
@@ -787,8 +902,18 @@ class HistoryManager {
     }
     
     private func generateMarkdownContent(text: String, description: String, tags: [String], createdAt: Date) -> String {
+        Self.generateMarkdownContent(
+            text: text,
+            description: description,
+            tags: tags,
+            createdAtStamp: dateFormatter.string(from: createdAt)
+        )
+    }
+
+    nonisolated private static func generateMarkdownContent(text: String, description: String, tags: [String], createdAtStamp: String) -> String {
         var content = "---\n"
-        content += "created: \(dateFormatter.string(from: createdAt))\n"
+        content.reserveCapacity(text.utf8.count + 128)
+        content += "created: \(createdAtStamp)\n"
         content += "description: \"\(description)\"\n"
         
         if !tags.isEmpty {
@@ -1020,6 +1145,7 @@ class HistoryManager {
     }
     
     func switchDataset() {
+        flushPendingDraftWrite()
         iCloudRetryTask?.cancel()
         metadataReloadTask?.cancel()
         snapshotWriteTask?.cancel()
@@ -1069,11 +1195,14 @@ class HistoryManager {
         let shouldRestoreSnapshot = !hasLoadedHistory && noteCache.isEmpty && !DemoModeManager.isEnabledFlag
 
         Task.detached(priority: .userInitiated) {
-            let snapshot = shouldRestoreSnapshot ? HistorySnapshotStore.load() : nil
+            let snapshot = shouldRestoreSnapshot
+                ? PerformanceLog.measure("history.snapshot.load") { HistorySnapshotStore.load() }
+                : nil
             if let snapshot, snapshot.storageKind != .demo, !snapshot.entries.isEmpty {
                 await MainActor.run {
                     guard generation == self.loadGeneration else { return }
                     self.applySnapshot(snapshot)
+                    PerformanceLog.mark("history.snapshot.applied", detail: "\(snapshot.entries.count) notes")
                 }
             }
 
@@ -1086,7 +1215,8 @@ class HistoryManager {
             }
 
             let cacheForScan: [String: NoteCacheEntry]
-            if let snapshot, snapshot.storageKind != .demo, snapshot.storagePath == resolution.url.path {
+            if let snapshot, snapshot.storageKind == resolution.kind, snapshot.storageKind != .demo {
+                // Match on storage kind, not path: a reinstall changes the sandbox UUID.
                 cacheForScan = Dictionary(uniqueKeysWithValues: snapshot.entries.map { ($0.fileName, $0) })
             } else if previousStoragePath == resolution.url.path {
                 cacheForScan = existingCache
@@ -1094,16 +1224,21 @@ class HistoryManager {
                 cacheForScan = [:]
             }
 
-            let result = Self.loadItemsFromDisk(
-                fileManager: fileManager,
-                resolution: resolution,
-                draftFileName: draftFileName,
-                noteCache: cacheForScan
-            )
+            let result = PerformanceLog.measure("history.load.disk", detail: "cache=\(cacheForScan.count)") {
+                Self.loadItemsFromDisk(
+                    fileManager: fileManager,
+                    resolution: resolution,
+                    draftFileName: draftFileName,
+                    noteCache: cacheForScan
+                )
+            }
 
             await MainActor.run {
                 guard generation == self.loadGeneration else { return }
-                self.mergeLoadedItems(result)
+                PerformanceLog.measure("history.load.merge", detail: "\(result.loadedItems.count) notes") {
+                    self.mergeLoadedItems(result)
+                }
+                PerformanceLog.mark("history.load.merged", detail: "\(result.loadedItems.count) notes")
             }
         }
     }

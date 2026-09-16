@@ -142,12 +142,10 @@ struct ContentView: View {
                 }
             }
             .navigationDestination(isPresented: $showHistory) {
-                HistoryView(initialSearchText: historySearchText)
-                    .background { RootReturnButtonBehavior() }
+                HistoryDestination(initialSearchText: historySearchText).equatable()
             }
             .navigationDestination(isPresented: $showAgentChat) {
-                AgentChatView()
-                    .background { RootReturnButtonBehavior() }
+                AgentChatDestination().equatable()
             }
             .safeAreaInset(edge: .bottom) {
                 bottomToolbar
@@ -190,6 +188,7 @@ struct ContentView: View {
             historyManager.loadItemsIfNeeded()
             if !hasLaunched {
                 hasLaunched = true
+                PerformanceLog.mark("ui.editor.appeared")
                 isTextEditorFocused = true
             } else {
                 scheduleKeyboardShow(delay: 0.5)
@@ -473,7 +472,8 @@ struct ContentView: View {
             .frame(maxWidth: .infinity)
             .padding(.top, 12)
 
-            if !isFocusMode && draftText.isEmpty && historyManager.savedItems.isEmpty {
+            // Wait for the first load so the hint doesn't flash before existing records arrive.
+            if !isFocusMode && draftText.isEmpty && historyManager.hasLoadedHistory && !historyManager.hasSavedItems {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("草稿随输入自动保存。添加“保存记录”步骤后，就能在记录列表中回顾。")
                         .font(.footnote)
@@ -713,6 +713,24 @@ struct ContentView: View {
 
     private func interruptDraftInputSession() {
         inputSessionResetToken &+= 1
+    }
+}
+
+/// Keeps the pushed screen's initializer out of ContentView's update path. ContentView
+/// re-evaluates on every keystroke; these wrappers only rebuild when their inputs change.
+private struct HistoryDestination: View, Equatable {
+    let initialSearchText: String
+
+    var body: some View {
+        HistoryView(initialSearchText: initialSearchText)
+            .background { RootReturnButtonBehavior() }
+    }
+}
+
+private struct AgentChatDestination: View, Equatable {
+    var body: some View {
+        AgentChatView()
+            .background { RootReturnButtonBehavior() }
     }
 }
 

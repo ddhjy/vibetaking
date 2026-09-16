@@ -16,8 +16,18 @@ struct VibetakingApp: App {
                 .modifier(AppAppearance())
         }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active {
-                HistoryManager.shared.refreshFromEnvironment()
+            switch newPhase {
+            case .active:
+                // First load comes from ContentView.onAppear. Refreshing here as well
+                // queued a second full disk scan on every cold start.
+                if HistoryManager.shared.hasLoadedHistory {
+                    HistoryManager.shared.refreshFromEnvironment()
+                }
+            case .inactive, .background:
+                // Debounced draft edits must reach disk before the app can be suspended.
+                HistoryManager.shared.flushPendingDraftWrite()
+            @unknown default:
+                break
             }
         }
     }

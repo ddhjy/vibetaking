@@ -862,7 +862,7 @@ struct HistoryRowView: View {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     recordContent.textSelection(.enabled)
-                    if item.text.count > 200 {
+                    if item.isLongText {
                         Button(isExpanded ? "收起全文" : "展开全文") { isExpanded.toggle() }
                             .font(.subheadline)
                             .frame(minHeight: 44)
@@ -912,7 +912,7 @@ struct HistoryRowView: View {
                 Label("正在从 iCloud 下载记录…", systemImage: "icloud.and.arrow.down")
                     .foregroundStyle(.secondary)
             } else {
-                Text(highlightedText(isExpanded ? item.text : item.preview))
+                bodyText
                     .font(.body)
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -938,9 +938,18 @@ struct HistoryRowView: View {
         Button("删除记录", systemImage: "trash", role: .destructive) { showDeleteConfirmation = true }
     }
 
-    private func highlightedText(_ text: String) -> AttributedString {
-        var result = AttributedString(text)
+    /// Plain text unless there is something to highlight; attributed text costs more to lay out.
+    private var bodyText: Text {
+        let text = isExpanded ? item.text : item.preview
         let tokens = searchText.split(whereSeparator: \.isWhitespace).map(String.init)
+        if tokens.isEmpty {
+            return Text(verbatim: text)
+        }
+        return Text(highlightedText(text, tokens: tokens))
+    }
+
+    private func highlightedText(_ text: String, tokens: [String]) -> AttributedString {
+        var result = AttributedString(text)
         for token in tokens {
             var start = text.startIndex
             while let range = text.range(of: token, options: [.caseInsensitive, .diacriticInsensitive], range: start..<text.endIndex) {
@@ -978,6 +987,22 @@ struct StatisticsView: View {
     @State private var selectedDate: Date? = nil
     
     private let calendar = Calendar.current
+    // Character counts walk every note once; the sheet re-renders on each calendar tap.
+    private let allCharacterCount: Int
+    private let recordsByDate: [Date: Int]
+
+    init(items: [HistoryItem]) {
+        self.items = items
+        let calendar = Calendar.current
+        var characters = 0
+        var counts: [Date: Int] = [:]
+        for item in items {
+            characters += item.text.count
+            counts[calendar.startOfDay(for: item.createdAt), default: 0] += 1
+        }
+        allCharacterCount = characters
+        recordsByDate = counts
+    }
     
     private var filteredItems: [HistoryItem] {
         guard let selectedDate = selectedDate else { return items }
@@ -989,7 +1014,8 @@ struct StatisticsView: View {
     }
     
     private var totalCharacters: Int {
-        filteredItems.reduce(0) { $0 + $1.text.count }
+        guard selectedDate != nil else { return allCharacterCount }
+        return filteredItems.reduce(0) { $0 + $1.text.count }
     }
     
     private var tagStatistics: [(tag: String, count: Int)] {
@@ -1005,15 +1031,6 @@ struct StatisticsView: View {
     
     private var untaggedCount: Int {
         filteredItems.filter { $0.tags.isEmpty }.count
-    }
-    
-    private var recordsByDate: [Date: Int] {
-        var counts: [Date: Int] = [:]
-        for item in items {
-            let dateOnly = calendar.startOfDay(for: item.createdAt)
-            counts[dateOnly, default: 0] += 1
-        }
-        return counts
     }
     
     private var selectedDateString: String {
