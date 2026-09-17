@@ -109,7 +109,12 @@ struct ContentView: View {
                     Menu("更多操作", systemImage: "ellipsis") {
                         Button {
                             isTextEditorFocused = false
-                            showAgentChat = true
+                            // Resign while the home page is visible so it receives
+                            // the keyboard hide event before navigation starts.
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                            Task { @MainActor in
+                                showAgentChat = true
+                            }
                         } label: {
                             Label("AI 助手", systemImage: "sparkles")
                         }
