@@ -6,8 +6,6 @@
 
 ## 下载
 
-已上架 App Store：
-
 [![Download on the App Store](https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/zh-cn?size=250x83)](https://apps.apple.com/cn/app/id6778762693)
 
 ![应用演示](docs/demo.png)
