@@ -11,5 +11,8 @@ apps/macos/dist/
 # Local Codex environment state
 .codex/environments/
 
+# Runtime logs from local tooling
+log/
+
 # macOS Finder metadata
 .DS_Store
