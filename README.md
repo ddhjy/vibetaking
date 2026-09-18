@@ -10,8 +10,6 @@
 
 [![Download on the App Store](https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/zh-cn?size=250x83)](https://apps.apple.com/cn/app/id6778762693)
 
-[随心记 - 打开即写](https://apps.apple.com/cn/app/id6778762693)
-
 ![应用演示](docs/demo.png)
 
 ## 设计理念
