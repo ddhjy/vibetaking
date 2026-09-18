@@ -3,38 +3,38 @@ import UniformTypeIdentifiers
 
 @MainActor
 @Observable
-class SettingsManager {
-    static let shared = SettingsManager()
-    static let defaultAIBaseURLString = "https://api.infingrow.asia/v1"
-    static let defaultAIModelID = "gpt-5.5"
-    private static let legacyAIBaseURLStrings = [
+class AISettingsStore {
+    static let shared = AISettingsStore()
+    static let defaultBaseURLString = "https://api.infingrow.asia/v1"
+    static let defaultModelID = "gpt-5.5"
+    private static let legacyBaseURLStrings = [
         "http://infingrow.asia:8080",
         "http://infingrow.asia:8080/v1"
     ]
     
-    private let aiApiTokenKey = "aiApiToken"
-    private let aiBaseURLStringKey = "aiBaseURLString"
-    private let aiModelIDKey = "aiModelID"
+    private let apiKeyStorageKey = "aiApiToken"
+    private let baseURLStorageKey = "aiBaseURLString"
+    private let modelIDStorageKey = "aiModelID"
     
-    var aiApiToken: String? {
+    var apiKey: String? {
         didSet {
-            if let token = aiApiToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+            if let token = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines),
                !token.isEmpty {
-                KeychainHelper.saveString(token, forKey: aiApiTokenKey)
+                KeychainStore.saveString(token, forKey: apiKeyStorageKey)
             } else {
-                KeychainHelper.delete(forKey: aiApiTokenKey)
+                KeychainStore.delete(forKey: apiKeyStorageKey)
             }
         }
     }
 
-    var aiBaseURLString: String {
+    var baseURLString: String {
         didSet {
             guard !isReloading else { return }
             persistBaseURLString()
         }
     }
 
-    var aiModelID: String {
+    var modelID: String {
         didSet {
             guard !isReloading else { return }
             persistModelID()
@@ -43,65 +43,65 @@ class SettingsManager {
 
     private var isReloading = false
     
-    static func normalizedAIBaseURLString(_ rawValue: String) -> String {
+    static func normalizedBaseURLString(_ rawValue: String) -> String {
         let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let baseValue = trimmedValue.isEmpty ? Self.defaultAIBaseURLString : trimmedValue
+        let baseValue = trimmedValue.isEmpty ? Self.defaultBaseURLString : trimmedValue
         let trimmedSlashes = baseValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return trimmedSlashes.hasSuffix("/v1") ? trimmedSlashes : "\(trimmedSlashes)/v1"
     }
 
-    private static func isLegacyAIBaseURLString(_ rawValue: String) -> Bool {
-        let normalizedValue = normalizedAIBaseURLString(rawValue)
-        return legacyAIBaseURLStrings
-            .map(normalizedAIBaseURLString)
+    private static func isLegacyBaseURLString(_ rawValue: String) -> Bool {
+        let normalizedValue = normalizedBaseURLString(rawValue)
+        return legacyBaseURLStrings
+            .map(normalizedBaseURLString)
             .contains(normalizedValue)
     }
 
     private init() {
         let snapshot = Self.loadSnapshot()
-        self.aiBaseURLString = snapshot.baseURLString
-        self.aiModelID = snapshot.modelID
+        self.baseURLString = snapshot.baseURLString
+        self.modelID = snapshot.modelID
         persistBaseURLString()
         persistModelID()
 
-        if let legacyToken = AppDefaults.current.string(forKey: aiApiTokenKey) {
-            KeychainHelper.saveString(legacyToken, forKey: aiApiTokenKey)
-            AppDefaults.current.removeObject(forKey: aiApiTokenKey)
+        if let legacyToken = AppDefaults.current.string(forKey: apiKeyStorageKey) {
+            KeychainStore.saveString(legacyToken, forKey: apiKeyStorageKey)
+            AppDefaults.current.removeObject(forKey: apiKeyStorageKey)
         }
-        self.aiApiToken = KeychainHelper.loadString(forKey: aiApiTokenKey)
+        self.apiKey = KeychainStore.loadString(forKey: apiKeyStorageKey)
     }
 
     func reload() {
         isReloading = true
         let snapshot = Self.loadSnapshot()
-        aiBaseURLString = snapshot.baseURLString
-        aiModelID = snapshot.modelID
+        baseURLString = snapshot.baseURLString
+        modelID = snapshot.modelID
         isReloading = false
         persistBaseURLString()
         persistModelID()
 
-        if let legacyToken = AppDefaults.current.string(forKey: aiApiTokenKey) {
-            KeychainHelper.saveString(legacyToken, forKey: aiApiTokenKey)
-            AppDefaults.current.removeObject(forKey: aiApiTokenKey)
+        if let legacyToken = AppDefaults.current.string(forKey: apiKeyStorageKey) {
+            KeychainStore.saveString(legacyToken, forKey: apiKeyStorageKey)
+            AppDefaults.current.removeObject(forKey: apiKeyStorageKey)
         }
-        aiApiToken = KeychainHelper.loadString(forKey: aiApiTokenKey)
+        apiKey = KeychainStore.loadString(forKey: apiKeyStorageKey)
     }
 
     private func persistBaseURLString() {
-        let trimmedBaseURL = aiBaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBaseURL = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedBaseURL.isEmpty {
-            AppDefaults.current.removeObject(forKey: aiBaseURLStringKey)
+            AppDefaults.current.removeObject(forKey: baseURLStorageKey)
         } else {
-            AppDefaults.current.set(trimmedBaseURL, forKey: aiBaseURLStringKey)
+            AppDefaults.current.set(trimmedBaseURL, forKey: baseURLStorageKey)
         }
     }
 
     private func persistModelID() {
-        let trimmedModelID = aiModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedModelID.isEmpty {
-            AppDefaults.current.removeObject(forKey: aiModelIDKey)
+            AppDefaults.current.removeObject(forKey: modelIDStorageKey)
         } else {
-            AppDefaults.current.set(trimmedModelID, forKey: aiModelIDKey)
+            AppDefaults.current.set(trimmedModelID, forKey: modelIDStorageKey)
         }
     }
 
@@ -118,43 +118,43 @@ class SettingsManager {
         let resolvedBaseURLString: String
         if let storedBaseURLString,
            !storedBaseURLString.isEmpty,
-           !isLegacyAIBaseURLString(storedBaseURLString) {
+           !isLegacyBaseURLString(storedBaseURLString) {
             resolvedBaseURLString = storedBaseURLString
         } else {
-            resolvedBaseURLString = defaultAIBaseURLString
+            resolvedBaseURLString = defaultBaseURLString
         }
 
         let storedModelID = defaults
             .string(forKey: "aiModelID")?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedModelID = storedModelID?.isEmpty == false ? storedModelID! : defaultAIModelID
+        let resolvedModelID = storedModelID?.isEmpty == false ? storedModelID! : defaultModelID
         return Snapshot(baseURLString: resolvedBaseURLString, modelID: resolvedModelID)
     }
 
     func exportConfiguration() -> AppAIConfiguration {
         AppAIConfiguration(
-            apiToken: aiApiToken,
-            baseURLString: aiBaseURLString,
-            modelID: aiModelID
+            apiKey: apiKey,
+            baseURLString: baseURLString,
+            modelID: modelID
         )
     }
 
     func applyConfiguration(_ configuration: AppAIConfiguration) {
         let importedBaseURLString = configuration.baseURLString
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        aiBaseURLString = importedBaseURLString.isEmpty
-            ? Self.defaultAIBaseURLString
+        baseURLString = importedBaseURLString.isEmpty
+            ? Self.defaultBaseURLString
             : importedBaseURLString
 
         let importedModelID = configuration.modelID
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        aiModelID = importedModelID.isEmpty
-            ? Self.defaultAIModelID
+        modelID = importedModelID.isEmpty
+            ? Self.defaultModelID
             : importedModelID
 
-        let importedToken = configuration.apiToken?
+        let importedToken = configuration.apiKey?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        aiApiToken = importedToken?.isEmpty == false ? importedToken : nil
+        apiKey = importedToken?.isEmpty == false ? importedToken : nil
     }
 }
 
@@ -163,7 +163,7 @@ struct SettingsView: View {
     @State private var pendingConfigurationURLs: [URL] = []
     @State private var confirmConfigurationImport = false
 
-    @State private var settingsManager = SettingsManager.shared
+    @State private var aiSettings = AISettingsStore.shared
     @State private var demoMode = DemoModeManager.shared
     @State private var versionTapCount = 0
     @State private var showDemoModeSection = false
@@ -191,20 +191,20 @@ struct SettingsView: View {
         let message: String
     }
 
-    private var hasToken: Bool {
-        guard let token = settingsManager.aiApiToken else { return false }
+    private var hasAPIKey: Bool {
+        guard let token = aiSettings.apiKey else { return false }
         return !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var selectedModelBinding: Binding<String> {
         Binding(
-            get: { settingsManager.aiModelID },
-            set: { settingsManager.aiModelID = $0 }
+            get: { aiSettings.modelID },
+            set: { aiSettings.modelID = $0 }
         )
     }
 
     private var normalizedBaseURLString: String {
-        SettingsManager.normalizedAIBaseURLString(settingsManager.aiBaseURLString)
+        AISettingsStore.normalizedBaseURLString(aiSettings.baseURLString)
     }
     
     var body: some View {
@@ -214,8 +214,8 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("AI 密钥（API Key）").font(.subheadline).foregroundStyle(.secondary)
                         SecureField("粘贴服务商提供的密钥", text: Binding(
-                            get: { settingsManager.aiApiToken ?? "" },
-                            set: { settingsManager.aiApiToken = $0.isEmpty ? nil : $0 }
+                            get: { aiSettings.apiKey ?? "" },
+                            set: { aiSettings.apiKey = $0.isEmpty ? nil : $0 }
                         ))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -229,8 +229,8 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("AI 服务地址").font(.subheadline).foregroundStyle(.secondary)
                         TextField("例如：https://api.example.com/v1", text: Binding(
-                            get: { settingsManager.aiBaseURLString },
-                            set: { settingsManager.aiBaseURLString = $0 }
+                            get: { aiSettings.baseURLString },
+                            set: { aiSettings.baseURLString = $0 }
                         ))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -240,9 +240,9 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 4)
 
-                    if normalizedBaseURLString != SettingsManager.defaultAIBaseURLString {
+                    if normalizedBaseURLString != AISettingsStore.defaultBaseURLString {
                         Button {
-                            settingsManager.aiBaseURLString = SettingsManager.defaultAIBaseURLString
+                            aiSettings.baseURLString = AISettingsStore.defaultBaseURLString
                             models = []
                             modelLoadError = nil
                         } label: {
@@ -267,9 +267,9 @@ struct SettingsView: View {
                         .padding(.vertical, 4)
                     if !models.isEmpty {
                         Picker("可用模型", selection: selectedModelBinding) {
-                            if !models.contains(where: { $0.id == settingsManager.aiModelID }) {
-                                Text("\(settingsManager.aiModelID)（当前）")
-                                    .tag(settingsManager.aiModelID)
+                            if !models.contains(where: { $0.id == aiSettings.modelID }) {
+                                Text("\(aiSettings.modelID)（当前）")
+                                    .tag(aiSettings.modelID)
                             }
                             ForEach(models) { model in
                                 Text(modelLabel(for: model))
@@ -295,7 +295,7 @@ struct SettingsView: View {
                     } label: {
                         Label(models.isEmpty ? "获取可用模型" : "刷新模型列表", systemImage: "arrow.clockwise")
                     }
-                    .disabled(!hasToken || isLoadingModels)
+                    .disabled(!hasAPIKey || isLoadingModels)
 
                     if let modelLoadError {
                         Label(modelLoadError, systemImage: "exclamationmark.circle")
@@ -305,7 +305,7 @@ struct SettingsView: View {
                 } header: {
                     Text("模型")
                 } footer: {
-                    Text(hasToken ? "填写服务商提供的模型 ID，或从可用模型中选择。刷新列表不会更改当前模型。" : "填写 AI 密钥后可获取模型列表，也可以直接输入模型 ID。")
+                    Text(hasAPIKey ? "填写服务商提供的模型 ID，或从可用模型中选择。刷新列表不会更改当前模型。" : "填写 AI 密钥后可获取模型列表，也可以直接输入模型 ID。")
                 }
 
                 Section {
@@ -441,10 +441,10 @@ struct SettingsView: View {
                     dismissButton: .default(Text("返回设置"))
                 )
             }
-            .onChange(of: settingsManager.aiApiToken ?? "") { _, _ in
+            .onChange(of: aiSettings.apiKey ?? "") { _, _ in
                 invalidateModelList()
             }
-            .onChange(of: settingsManager.aiBaseURLString) { _, _ in
+            .onChange(of: aiSettings.baseURLString) { _, _ in
                 invalidateModelList()
             }
         }
@@ -486,7 +486,7 @@ struct SettingsView: View {
 
         Task {
             do {
-                let url = try AppConfigurationManager.exportConfiguration()
+                let url = try AppConfigurationTransfer.exportConfiguration()
                 isExportingConfiguration = false
                 exportedConfigurationURL = url
             } catch {
@@ -518,7 +518,7 @@ struct SettingsView: View {
 
         Task {
             do {
-                try AppConfigurationManager.importConfiguration(from: urls)
+                try AppConfigurationTransfer.importConfiguration(from: urls)
                 models = []
                 modelLoadError = nil
                 isImportingConfiguration = false
@@ -541,7 +541,7 @@ struct SettingsView: View {
     }
 
     private func loadModels() async {
-        guard hasToken else {
+        guard hasAPIKey else {
             models = []
             modelLoadError = "填写上方的 AI 密钥后，再获取模型列表。"
             return

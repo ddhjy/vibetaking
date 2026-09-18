@@ -34,15 +34,15 @@ class ShakeDetectorViewController: UIViewController {
     }
 }
 
-struct HistoryView: View {
+struct NoteLibraryView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var historyManager = HistoryManager.shared
+    @State private var noteStore = NoteStore.shared
     @State private var showClearConfirmation = false
-    @State private var copiedItemId: UUID?
+    @State private var copiedNoteID: UUID?
     @State private var isEditMode = false
-    @State private var selectedItems: Set<UUID> = []
+    @State private var selectedNoteIDs: Set<UUID> = []
     @State private var selectedTags: [TagSelection] = []
-    @State private var tagPickerItem: HistoryItem? = nil
+    @State private var noteForTagPicker: Note? = nil
     @State private var isExporting = false
     @State private var isImporting = false
     @State private var showImportPicker = false
@@ -57,7 +57,7 @@ struct HistoryView: View {
     @State private var showBatchTagPicker = false
     @State private var isRandomMode = false
     @State private var listProjectionID = UUID()
-    @State private var listCache = HistoryListCache()
+    @State private var listCache = NoteListCache()
     @State private var showBatchCopiedToast = false
     @State private var batchCopiedCount: Int = 0
     @State private var batchCopyToastWorkItem: DispatchWorkItem?
@@ -78,11 +78,11 @@ struct HistoryView: View {
         let message: String
     }
     
-    nonisolated private struct HistoryListCache: Sendable {
-        var savedItems: [HistoryItem] = []
-        var searchFilteredItems: [HistoryItem] = []
-        var filteredItems: [HistoryItem] = []
-        var displayedItems: [HistoryItem] = []
+    nonisolated private struct NoteListCache: Sendable {
+        var savedItems: [Note] = []
+        var searchFilteredItems: [Note] = []
+        var filteredItems: [Note] = []
+        var displayedItems: [Note] = []
         var searchTagCounts: [String: Int] = [:]
         var searchNoTagCount: Int = 0
         var searchTagSet: Set<String> = []
@@ -94,7 +94,7 @@ struct HistoryView: View {
                 .map(String.init)
         }
         
-        private static func matchesSelections(item: HistoryItem, selections: [TagSelection]) -> Bool {
+        private static func matchesSelections(item: Note, selections: [TagSelection]) -> Bool {
             for selection in selections {
                 if selection.isNoTagSelection {
                     switch selection.state {
@@ -116,14 +116,14 @@ struct HistoryView: View {
         }
         
         static func build(
-            items: [HistoryItem],
+            items: [Note],
             searchText: String,
             selectedTags: [TagSelection],
             isRandomMode: Bool
-        ) -> HistoryListCache {
+        ) -> NoteListCache {
             let savedItems = items.filter { !$0.isDraft }
             
-            let searchFilteredItems: [HistoryItem]
+            let searchFilteredItems: [Note]
             let tokens = tokenize(searchText)
             if tokens.isEmpty {
                 searchFilteredItems = savedItems
@@ -137,7 +137,7 @@ struct HistoryView: View {
                 }
             }
             
-            let filteredItems: [HistoryItem]
+            let filteredItems: [Note]
             if selectedTags.isEmpty {
                 filteredItems = searchFilteredItems
             } else {
@@ -146,7 +146,7 @@ struct HistoryView: View {
                 }
             }
             
-            let displayedItems: [HistoryItem]
+            let displayedItems: [Note]
             if isRandomMode {
                 displayedItems = filteredItems.shuffled()
             } else {
@@ -162,7 +162,7 @@ struct HistoryView: View {
                 }
             }
             
-            return HistoryListCache(
+            return NoteListCache(
                 savedItems: savedItems,
                 searchFilteredItems: searchFilteredItems,
                 filteredItems: filteredItems,
@@ -178,8 +178,8 @@ struct HistoryView: View {
         let trimmedSearchText = initialSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         _searchText = State(initialValue: trimmedSearchText)
         _committedSearchText = State(initialValue: trimmedSearchText)
-        _listCache = State(initialValue: HistoryListCache.build(
-            items: HistoryManager.shared.items,
+        _listCache = State(initialValue: NoteListCache.build(
+            items: NoteStore.shared.items,
             searchText: trimmedSearchText,
             selectedTags: [],
             isRandomMode: false
@@ -199,13 +199,13 @@ struct HistoryView: View {
         rebuildToken = token
         isRebuildingCache = true
 
-        let itemsSnapshot = historyManager.items
+        let itemsSnapshot = noteStore.items
         let searchTextSnapshot = effectiveSearchText
         let selectedTagsSnapshot = selectedTags
         let randomModeSnapshot = isRandomMode
 
         Task.detached(priority: .userInitiated) {
-            let cache = HistoryListCache.build(
+            let cache = NoteListCache.build(
                 items: itemsSnapshot,
                 searchText: searchTextSnapshot,
                 selectedTags: selectedTagsSnapshot,
@@ -220,7 +220,7 @@ struct HistoryView: View {
         }
     }
 
-    private func matchesSelections(item: HistoryItem, selections: [TagSelection]) -> Bool {
+    private func matchesSelections(item: Note, selections: [TagSelection]) -> Bool {
         for selection in selections {
             if selection.isNoTagSelection {
                 switch selection.state {
@@ -243,7 +243,7 @@ struct HistoryView: View {
 
     private func applyListProjectionImmediately() {
         let baseItems = listCache.searchFilteredItems
-        let filteredItems: [HistoryItem]
+        let filteredItems: [Note]
 
         if selectedTags.isEmpty {
             filteredItems = baseItems
@@ -253,7 +253,7 @@ struct HistoryView: View {
             }
         }
 
-        let displayedItems: [HistoryItem]
+        let displayedItems: [Note]
         if isRandomMode {
             displayedItems = filteredItems.shuffled()
         } else {
@@ -277,7 +277,7 @@ struct HistoryView: View {
             Color(.systemBackground)
                 .ignoresSafeArea()
             
-            if (historyManager.isLoading || isRebuildingCache) && listCache.savedItems.isEmpty {
+            if (noteStore.isLoading || isRebuildingCache) && listCache.savedItems.isEmpty {
                 loadingStateView
             } else if listCache.savedItems.isEmpty {
                 emptyStateView
@@ -286,7 +286,7 @@ struct HistoryView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if historyManager.isUsingLocalFallback {
+            if noteStore.isUsingLocalFallback {
                 iCloudUnavailableBanner
             }
         }
@@ -308,7 +308,7 @@ struct HistoryView: View {
                 handleShake()
             }
         }
-        .navigationTitle(isEditMode ? "已选择 \(selectedItems.count) 条" : "记录")
+        .navigationTitle(isEditMode ? "已选择 \(selectedNoteIDs.count) 条" : "记录")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(id: AppToolbarIdentity.moreButton, placement: .topBarTrailing) {
@@ -316,7 +316,7 @@ struct HistoryView: View {
                     Button(action: {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             isEditMode = false
-                            selectedItems.removeAll()
+                            selectedNoteIDs.removeAll()
                         }
                     }) {
                         Text("完成").fontWeight(.semibold)
@@ -329,7 +329,7 @@ struct HistoryView: View {
                         Button(action: { showImportPicker = true }) {
                             Label("导入记录", systemImage: "square.and.arrow.down")
                         }
-                        .disabled(isImporting || historyManager.isLoading)
+                        .disabled(isImporting || noteStore.isLoading)
                         
                         if !listCache.savedItems.isEmpty {
                             Divider()
@@ -363,18 +363,18 @@ struct HistoryView: View {
             ToolbarItemGroup(placement: .bottomBar) {
                 if isEditMode {
                     let selectableIDs = Set(listCache.filteredItems.filter { !$0.isDownloading }.map(\.id))
-                    let allSelected = !selectableIDs.isEmpty && selectableIDs.isSubset(of: selectedItems)
+                    let allSelected = !selectableIDs.isEmpty && selectableIDs.isSubset(of: selectedNoteIDs)
                     Button(action: {
                         if allSelected {
-                            selectedItems.removeAll()
+                            selectedNoteIDs.removeAll()
                         } else {
-                            selectedItems = selectableIDs
+                            selectedNoteIDs = selectableIDs
                         }
                     }) {
                         Text(allSelected ? "取消全选" : "全选")
                             .font(.body)
                     }
-                    .tint(Design.primaryColor)
+                    .tint(AppTheme.primaryColor)
                     .disabled(selectableIDs.isEmpty)
                     
                     Spacer()
@@ -382,20 +382,20 @@ struct HistoryView: View {
                     Button(action: copySelectedItems) {
                         Label("复制所选记录", systemImage: "doc.on.doc").labelStyle(.iconOnly)
                     }
-                    .tint(Design.primaryColor)
-                    .disabled(selectedItems.isEmpty)
+                    .tint(AppTheme.primaryColor)
+                    .disabled(selectedNoteIDs.isEmpty)
 
                     Button(action: { showBatchTagPicker = true }) {
                         Label("编辑所选记录的标签", systemImage: "tag").labelStyle(.iconOnly)
                     }
-                    .tint(Design.primaryColor)
-                    .disabled(selectedItems.isEmpty)
+                    .tint(AppTheme.primaryColor)
+                    .disabled(selectedNoteIDs.isEmpty)
 
                     Button(action: { showClearConfirmation = true }) {
                         Label("删除所选记录", systemImage: "trash").labelStyle(.iconOnly)
                     }
                     .tint(Color(.systemRed))
-                    .disabled(selectedItems.isEmpty)
+                    .disabled(selectedNoteIDs.isEmpty)
                 }
             }
         }
@@ -409,13 +409,13 @@ struct HistoryView: View {
         .onChange(of: committedSearchText) { _, _ in
             rebuildListCacheAsync()
         }
-        .onChange(of: historyManager.items) { _, _ in
-            selectedItems.formIntersection(Set(historyManager.savedItems.map(\.id)))
+        .onChange(of: noteStore.items) { _, _ in
+            selectedNoteIDs.formIntersection(Set(noteStore.savedItems.map(\.id)))
             rebuildListCacheAsync()
         }
-        .alert("删除这 \(selectedItems.count) 条记录？", isPresented: $showClearConfirmation) {
+        .alert("删除这 \(selectedNoteIDs.count) 条记录？", isPresented: $showClearConfirmation) {
             Button("保留记录", role: .cancel) { }
-            Button("删除 \(selectedItems.count) 条记录", role: .destructive) {
+            Button("删除 \(selectedNoteIDs.count) 条记录", role: .destructive) {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     deleteSelectedItems()
                 }
@@ -423,11 +423,11 @@ struct HistoryView: View {
         } message: {
             Text("所选记录将被永久删除，无法撤销。使用 iCloud 时，删除也会同步到其他设备。")
         }
-        .sheet(item: $tagPickerItem) { item in
-            TagPickerView(itemId: item.id)
+        .sheet(item: $noteForTagPicker) { item in
+            TagPickerView(noteID: item.id)
         }
         .sheet(isPresented: $showBatchTagPicker) {
-            BatchTagPickerView(itemIds: selectedItems)
+            BatchTagPickerView(itemIds: selectedNoteIDs)
         }
         .sheet(isPresented: Binding(
             get: { exportedFileURL != nil },
@@ -455,10 +455,10 @@ struct HistoryView: View {
             )
         }
         .onAppear {
-            if historyManager.isUsingLocalFallback || historyManager.hasPendingICloudDownloads {
-                historyManager.refreshFromEnvironment()
+            if noteStore.isUsingLocalFallback || noteStore.hasPendingICloudDownloads {
+                noteStore.refreshFromEnvironment()
             } else {
-                historyManager.loadItemsIfNeeded()
+                noteStore.loadItemsIfNeeded()
             }
             rebuildListCacheAsync()
 
@@ -466,9 +466,9 @@ struct HistoryView: View {
     }
     
     private func deleteSelectedItems() {
-        historyManager.deleteRecords(ids: selectedItems)
-        selectedItems.removeAll()
-        if historyManager.savedItems.isEmpty {
+        noteStore.deleteRecords(ids: selectedNoteIDs)
+        selectedNoteIDs.removeAll()
+        if noteStore.savedItems.isEmpty {
             isEditMode = false
         }
     }
@@ -478,7 +478,7 @@ struct HistoryView: View {
         
         Task {
             do {
-                let url = try historyManager.exportAllNotes()
+                let url = try noteStore.exportAllNotes()
                 isExporting = false
                 exportedFileURL = url
             } catch {
@@ -502,7 +502,7 @@ struct HistoryView: View {
         
         Task {
             do {
-                let result = try historyManager.importNotes(from: urls)
+                let result = try noteStore.importNotes(from: urls)
                 isImporting = false
                 rebuildListCacheAsync()
                 showImportResult(result)
@@ -647,16 +647,16 @@ struct HistoryView: View {
 
     private var emptyStateView: some View {
         ContentUnavailableView {
-            Label(historyManager.isUsingLocalFallback ? "本机还没有记录" : "还没有记录", systemImage: "rectangle.stack")
+            Label(noteStore.isUsingLocalFallback ? "本机还没有记录" : "还没有记录", systemImage: "rectangle.stack")
         } description: {
-            Text(historyManager.isUsingLocalFallback
+            Text(noteStore.isUsingLocalFallback
                  ? "可以先在本机记录。要查看 iCloud 中的记录，请确认已登录 Apple 账户并开启 iCloud 云盘，再返回此页。"
                  : "草稿与已保存的记录分开存放。写好后，运行含“保存记录”步骤的工作流，就能在这里回顾。")
         } actions: {
             Button("开始记录") { dismiss() }.buttonStyle(.borderedProminent)
             Button("从文件导入", systemImage: "square.and.arrow.down") { showImportPicker = true }
                 .buttonStyle(.bordered)
-                .disabled(isImporting || historyManager.isLoading)
+                .disabled(isImporting || noteStore.isLoading)
         }
     }
 
@@ -688,18 +688,18 @@ struct HistoryView: View {
     private var historyList: some View {
         List {
             ForEach(listCache.displayedItems) { item in
-                HistoryRowView(
+                NoteRowView(
                     item: item,
-                    isCopied: copiedItemId == item.id,
+                    isCopied: copiedNoteID == item.id,
                     isEditMode: isEditMode,
-                    isSelected: selectedItems.contains(item.id),
+                    isSelected: selectedNoteIDs.contains(item.id),
                     filteredTags: selectedTags.filter { $0.state == .positive }.map { $0.tag },
                     searchText: effectiveSearchText,
                     onCopy: { copyItem(item) },
                     onToggleSelection: { toggleSelection(item) },
-                    onTagTap: { if !item.isDownloading { tagPickerItem = item } },
-                    onEdit: { isEditMode = true; selectedItems.insert(item.id) },
-                    onDelete: { historyManager.deleteRecord(item) }
+                    onTagTap: { if !item.isDownloading { noteForTagPicker = item } },
+                    onEdit: { isEditMode = true; selectedNoteIDs.insert(item.id) },
+                    onDelete: { noteStore.deleteRecord(item) }
                 )
                 .id(item.id)
             }
@@ -710,19 +710,19 @@ struct HistoryView: View {
         .id(listProjectionID)
     }
 
-    private func toggleSelection(_ item: HistoryItem) {
+    private func toggleSelection(_ item: Note) {
         guard !item.isDownloading else { return }
         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-            if selectedItems.contains(item.id) {
-                selectedItems.remove(item.id)
+            if selectedNoteIDs.contains(item.id) {
+                selectedNoteIDs.remove(item.id)
             } else {
-                selectedItems.insert(item.id)
+                selectedNoteIDs.insert(item.id)
             }
         }
     }
     
     private func copySelectedItems() {
-        guard !selectedItems.isEmpty else { return }
+        guard !selectedNoteIDs.isEmpty else { return }
         
         mediumHapticTrigger += 1
         
@@ -735,18 +735,18 @@ struct HistoryView: View {
         showBatchCopiedToast(count: items.count)
     }
     
-    private func selectedHistoryItemsInCopyOrder() -> [HistoryItem] {
-        let displayed = listCache.displayedItems.filter { selectedItems.contains($0.id) }
+    private func selectedHistoryItemsInCopyOrder() -> [Note] {
+        let displayed = listCache.displayedItems.filter { selectedNoteIDs.contains($0.id) }
         let displayedIds = Set(displayed.map { $0.id })
         
-        let remaining = historyManager.savedItems
-            .filter { selectedItems.contains($0.id) && !displayedIds.contains($0.id) }
+        let remaining = noteStore.savedItems
+            .filter { selectedNoteIDs.contains($0.id) && !displayedIds.contains($0.id) }
             .sorted { $0.createdAt > $1.createdAt }
         
         return displayed + remaining
     }
     
-    private func buildBatchCopyText(items: [HistoryItem]) -> String {
+    private func buildBatchCopyText(items: [Note]) -> String {
         let separator = "\n\n---\n\n"
         return items
             .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -772,21 +772,21 @@ struct HistoryView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: workItem)
     }
     
-    private func copyItem(_ item: HistoryItem) {
+    private func copyItem(_ item: Note) {
         mediumHapticTrigger += 1
         
         UIPasteboard.general.string = item.text
         UIAccessibility.post(notification: .announcement, argument: "已复制记录")
         
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            copiedItemId = item.id
+            copiedNoteID = item.id
         }
         
         Task {
             try? await Task.sleep(for: .seconds(2))
             withAnimation(.easeOut(duration: 0.3)) {
-                if copiedItemId == item.id {
-                    copiedItemId = nil
+                if copiedNoteID == item.id {
+                    copiedNoteID = nil
                 }
             }
         }
@@ -826,8 +826,8 @@ private extension UIApplication {
     }
 }
 
-struct HistoryRowView: View {
-    let item: HistoryItem
+struct NoteRowView: View {
+    let item: Note
     let isCopied: Bool
     let isEditMode: Bool
     let isSelected: Bool
@@ -848,7 +848,7 @@ struct HistoryRowView: View {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                             .font(.title3)
-                            .foregroundStyle(isSelected ? Design.primaryColor : Color.secondary)
+                            .foregroundStyle(isSelected ? AppTheme.primaryColor : Color.secondary)
                             .accessibilityHidden(true)
                         recordContent
                     }
@@ -876,14 +876,14 @@ struct HistoryRowView: View {
                                 .frame(minHeight: 44, alignment: .leading)
                         }
                         .buttonStyle(.borderless)
-                        .tint(Design.primaryColor)
+                        .tint(AppTheme.primaryColor)
                         .disabled(item.isDownloading)
                         .accessibilityLabel("编辑记录标签")
                         .accessibilityValue(item.tags.isEmpty ? "无标签" : item.tags.joined(separator: "、"))
                         Spacer(minLength: 0)
                         Menu { rowActions } label: {
                             Image(systemName: "ellipsis")
-                                .font(Design.controlFont)
+                                .font(AppTheme.controlFont)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
@@ -897,7 +897,7 @@ struct HistoryRowView: View {
         .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
         .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
-        .listRowBackground(isSelected ? Design.primaryColor.opacity(0.10) : Color(.systemBackground))
+        .listRowBackground(isSelected ? AppTheme.primaryColor.opacity(0.10) : Color(.systemBackground))
         .alert("删除这条记录？", isPresented: $showDeleteConfirmation) {
             Button("保留记录", role: .cancel) { }
             Button("删除记录", role: .destructive, action: onDelete)
@@ -954,7 +954,7 @@ struct HistoryRowView: View {
             var start = text.startIndex
             while let range = text.range(of: token, options: [.caseInsensitive, .diacriticInsensitive], range: start..<text.endIndex) {
                 if let attributedRange = Range(NSRange(range, in: text), in: result) {
-                    result[attributedRange].backgroundColor = Design.primaryColor.opacity(0.16)
+                    result[attributedRange].backgroundColor = AppTheme.primaryColor.opacity(0.16)
                     result[attributedRange].font = .body.bold()
                 }
                 start = range.upperBound
@@ -966,7 +966,7 @@ struct HistoryRowView: View {
 
 #Preview {
     NavigationStack {
-        HistoryView()
+        NoteLibraryView()
     }
 }
 
@@ -982,7 +982,7 @@ struct ShareSheet: UIViewControllerRepresentable {
 
 struct StatisticsView: View {
     @Environment(\.dismiss) private var dismiss
-    let items: [HistoryItem]
+    let items: [Note]
     @State private var displayedMonth = Date()
     @State private var selectedDate: Date? = nil
     
@@ -991,7 +991,7 @@ struct StatisticsView: View {
     private let allCharacterCount: Int
     private let recordsByDate: [Date: Int]
 
-    init(items: [HistoryItem]) {
+    init(items: [Note]) {
         self.items = items
         let calendar = Calendar.current
         var characters = 0
@@ -1004,7 +1004,7 @@ struct StatisticsView: View {
         recordsByDate = counts
     }
     
-    private var filteredItems: [HistoryItem] {
+    private var filteredItems: [Note] {
         guard let selectedDate = selectedDate else { return items }
         return items.filter { calendar.isDate($0.createdAt, inSameDayAs: selectedDate) }
     }
@@ -1148,7 +1148,7 @@ struct CalendarGridView: View {
             HStack(spacing: 4) {
                 Button("上个月", systemImage: "chevron.left") { changeMonth(by: -1) }
                     .labelStyle(.iconOnly)
-                    .font(Design.controlFont)
+                    .font(AppTheme.controlFont)
                     .frame(width: 44, height: 44)
                 Text(displayedMonth.formatted(.dateTime.year().month(dynamicTypeSize.isAccessibilitySize ? .abbreviated : .wide)))
                     .font(.headline)
@@ -1157,7 +1157,7 @@ struct CalendarGridView: View {
                     .accessibilityAddTraits(.isHeader)
                 Button("下个月", systemImage: "chevron.right") { changeMonth(by: 1) }
                     .labelStyle(.iconOnly)
-                    .font(Design.controlFont)
+                    .font(AppTheme.controlFont)
                     .frame(width: 44, height: 44)
             }
             if dynamicTypeSize.isAccessibilitySize {
@@ -1189,13 +1189,13 @@ struct CalendarGridView: View {
                             Text(date.formatted(.dateTime.day()))
                                 .font(.callout.weight(calendar.isDateInToday(date) || selected ? .bold : .regular))
                             Circle()
-                                .fill(count > 0 ? (selected ? Color.white : Design.primaryColor) : .clear)
+                                .fill(count > 0 ? (selected ? Color.white : AppTheme.primaryColor) : .clear)
                                 .frame(width: 5, height: 5)
                                 .accessibilityHidden(true)
                         }
                         .frame(minWidth: 44, minHeight: 44)
                         .foregroundStyle(selected ? Color.white : (count > 0 ? Color.primary : Color.secondary))
-                        .background(selected ? Design.primaryColor : .clear, in: RoundedRectangle(cornerRadius: 12))
+                        .background(selected ? AppTheme.primaryColor : .clear, in: RoundedRectangle(cornerRadius: 12))
                         .contentShape(Rectangle())
                     }
                     .disabled(count == 0)
@@ -1223,7 +1223,7 @@ struct CalendarGridView: View {
                             Text("\(count(for: date)) 条记录").font(.subheadline).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
-                        if isSelected(date) { Image(systemName: "checkmark").foregroundStyle(Design.primaryColor) }
+                        if isSelected(date) { Image(systemName: "checkmark").foregroundStyle(AppTheme.primaryColor) }
                     }
                     .foregroundStyle(.primary)
                     .padding(.vertical, 10)

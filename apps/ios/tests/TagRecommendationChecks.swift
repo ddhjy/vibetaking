@@ -1,13 +1,13 @@
 import Foundation
 
 // Compile the production service without reading app settings or credentials.
-@MainActor final class SettingsManager {
-    static let shared = SettingsManager()
-    static let defaultAIModelID = "test-model"
-    var aiApiToken: String?
-    var aiBaseURLString = "https://vibetaking.test/v1"
-    var aiModelID = defaultAIModelID
-    static func normalizedAIBaseURLString(_ value: String) -> String { value }
+@MainActor final class AISettingsStore {
+    static let shared = AISettingsStore()
+    static let defaultModelID = "test-model"
+    var apiKey: String?
+    var baseURLString = "https://vibetaking.test/v1"
+    var modelID = defaultModelID
+    static func normalizedBaseURLString(_ value: String) -> String { value }
 }
 
 nonisolated final class RecommendationResponse: URLProtocol, @unchecked Sendable {
@@ -111,7 +111,7 @@ nonisolated final class RecommendationResponse: URLProtocol, @unchecked Sendable
         } catch is CancellationError {}
         print("PASS: Cancelling recommendation interrupts preparation before the request")
 
-        SettingsManager.shared.aiApiToken = "test-only"
+        AISettingsStore.shared.apiKey = "test-only"
         let result = try await AIService.shared.recommendTags(
             for: text,
             from: [" 灵感 ", "工作", "灵感"],

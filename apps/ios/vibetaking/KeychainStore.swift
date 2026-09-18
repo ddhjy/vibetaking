@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-enum KeychainHelper {
+enum KeychainStore {
 
     @discardableResult
     static func save(_ data: Data, forKey key: String) -> Bool {

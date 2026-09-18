@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ContentView: View {
+struct QuickCaptureView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .largeTitle) private var titleWordmarkHeight: CGFloat = 34
@@ -8,22 +8,22 @@ struct ContentView: View {
     @Namespace private var toolbarGlassNamespace
     private enum SheetTrigger: Hashable { case more, tags, workflows }
 
-    @State private var showHistory: Bool = false
-    @State private var showAgentChat: Bool = false
-    @State private var historySearchText: String = ""
-    @State private var showTagSelector: Bool = false
-    @State private var showDebugView: Bool = false
-    @State private var historyManager = HistoryManager.shared
-    @State private var tagManager = TagManager.shared
+    @State private var isNoteLibraryPresented: Bool = false
+    @State private var isAgentChatPresented: Bool = false
+    @State private var noteSearchText: String = ""
+    @State private var isTagPickerPresented: Bool = false
+    @State private var isDebugPresented: Bool = false
+    @State private var noteStore = NoteStore.shared
+    @State private var tagIndex = TagIndex.shared
     
-    @State private var showSettings: Bool = false
+    @State private var isSettingsPresented: Bool = false
 
     @State private var isTextEditorFocused: Bool = false
     
-    @State private var showWorkflowConfig = false
+    @State private var isWorkflowSettingsPresented = false
     @State private var workflowManager = WorkflowManager.shared
-    @State private var processingWorkflowId: UUID? = nil
-    @State private var visibleLoadingWorkflowId: UUID? = nil
+    @State private var processingWorkflowID: UUID? = nil
+    @State private var visibleLoadingWorkflowID: UUID? = nil
     @State private var workflowError: Error? = nil
     
     @State private var keyboardTask: Task<Void, Never>?
@@ -45,11 +45,11 @@ struct ContentView: View {
     @State private var suppressNextWorkflowTap = false
     
     private var draftText: String {
-        historyManager.currentDraft.text
+        noteStore.currentDraft.text
     }
     
     private var selectedTags: [String] {
-        historyManager.currentDraft.tags
+        noteStore.currentDraft.tags
     }
 
     private var trimmedDraftText: String {
@@ -95,12 +95,12 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("记录", systemImage: "rectangle.stack") {
-                        navigateToHistory()
+                        openNoteLibrary()
                     }
                     .labelStyle(.iconOnly)
                     .accessibilityLabel("记录")
                     .accessibilityHint("打开记录列表")
-                    .disabled(processingWorkflowId != nil)
+                    .disabled(processingWorkflowID != nil)
                 }
 
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
@@ -113,14 +113,14 @@ struct ContentView: View {
                             // the keyboard hide event before navigation starts.
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             Task { @MainActor in
-                                showAgentChat = true
+                                isAgentChatPresented = true
                             }
                         } label: {
                             Label("AI 助手", systemImage: "sparkles")
                         }
 
                         Button("工作流", systemImage: "arrow.triangle.branch") {
-                            showWorkflowConfig = true
+                            isWorkflowSettingsPresented = true
                         }
 
                         Menu("进入专注模式", systemImage: "viewfinder") {
@@ -130,12 +130,12 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        .disabled(processingWorkflowId != nil)
+                        .disabled(processingWorkflowID != nil)
 
                         Divider()
 
                         Button {
-                            showSettings = true
+                            isSettingsPresented = true
                         } label: {
                             Label("设置", systemImage: "gearshape")
                         }
@@ -146,31 +146,31 @@ struct ContentView: View {
                     .id(AppToolbarIdentity.moreButton)
                 }
             }
-            .navigationDestination(isPresented: $showHistory) {
-                HistoryDestination(initialSearchText: historySearchText).equatable()
+            .navigationDestination(isPresented: $isNoteLibraryPresented) {
+                NoteLibraryDestination(initialSearchText: noteSearchText).equatable()
             }
-            .navigationDestination(isPresented: $showAgentChat) {
+            .navigationDestination(isPresented: $isAgentChatPresented) {
                 AgentChatDestination().equatable()
             }
             .safeAreaInset(edge: .bottom) {
                 bottomToolbar
             }
-            .sheet(isPresented: $showTagSelector, onDismiss: { restoreEditorFocus(to: .tags) }) {
-                TagPickerView(itemId: historyManager.currentDraft.id)
+            .sheet(isPresented: $isTagPickerPresented, onDismiss: { restoreEditorFocus(to: .tags) }) {
+                TagPickerView(noteID: noteStore.currentDraft.id)
             }
-            .sheet(isPresented: $showDebugView) {
+            .sheet(isPresented: $isDebugPresented) {
                 DebugView()
             }
-            .sheet(isPresented: $showSettings, onDismiss: { restoreEditorFocus(to: .more) }) {
+            .sheet(isPresented: $isSettingsPresented, onDismiss: { restoreEditorFocus(to: .more) }) {
                 SettingsView()
             }
-            .sheet(isPresented: $showWorkflowConfig, onDismiss: { restoreEditorFocus(to: .workflows) }) {
+            .sheet(isPresented: $isWorkflowSettingsPresented, onDismiss: { restoreEditorFocus(to: .workflows) }) {
                 WorkflowConfigView()
             }
             .sheet(item: Binding(
-                get: { showAgentChat ? nil : OffloadPermissionManager.shared.pendingRequest },
+                get: { isAgentChatPresented ? nil : OffloadPermissionManager.shared.pendingRequest },
                 set: { newValue in
-                    if newValue == nil, !showAgentChat, let current = OffloadPermissionManager.shared.pendingRequest {
+                    if newValue == nil, !isAgentChatPresented, let current = OffloadPermissionManager.shared.pendingRequest {
                         OffloadPermissionManager.shared.respond(to: current.id, allowed: false)
                     }
                 }
@@ -179,9 +179,9 @@ struct ContentView: View {
             }
             .alert(workflowErrorTitle, isPresented: $showWorkflowError) {
                 if workflowError is AIServiceError || workflowError is LLMError {
-                    Button("检查 AI 设置") { showSettings = true }
+                    Button("检查 AI 设置") { isSettingsPresented = true }
                 }
-                Button("检查工作流") { showWorkflowConfig = true }
+                Button("检查工作流") { isWorkflowSettingsPresented = true }
                 Button("继续记录", role: .cancel) { workflowError = nil }
             } message: {
                 Text([workflowError?.userFacingDescription ?? "请检查工作流设置后再试一次。", workflowErrorContext]
@@ -190,7 +190,7 @@ struct ContentView: View {
 
         }
         .onAppear {
-            historyManager.loadItemsIfNeeded()
+            noteStore.loadItemsIfNeeded()
             if !hasLaunched {
                 hasLaunched = true
                 PerformanceLog.mark("ui.editor.appeared")
@@ -199,7 +199,7 @@ struct ContentView: View {
                 scheduleKeyboardShow(delay: 0.5)
             }
         }
-        .onChange(of: showHistory) { _, isShowing in
+        .onChange(of: isNoteLibraryPresented) { _, isShowing in
             if isShowing {
                 keyboardTask?.cancel()
                 keyboardTask = nil
@@ -207,7 +207,7 @@ struct ContentView: View {
                 scheduleKeyboardShow(delay: 0.5)
             }
         }
-        .onChange(of: showAgentChat) { _, isShowing in
+        .onChange(of: isAgentChatPresented) { _, isShowing in
             if isShowing {
                 keyboardTask?.cancel()
                 keyboardTask = nil
@@ -238,7 +238,7 @@ struct ContentView: View {
     }
     
     private var isPresentingSheet: Bool {
-        showTagSelector || showSettings || showWorkflowConfig || showDebugView
+        isTagPickerPresented || isSettingsPresented || isWorkflowSettingsPresented || isDebugPresented
             || OffloadPermissionManager.shared.pendingRequest != nil
     }
 
@@ -249,7 +249,7 @@ struct ContentView: View {
     private var bottomToolbar: some View {
         VStack(spacing: 8) {
             if !isFocusMode,
-               let workflowID = visibleLoadingWorkflowId,
+               let workflowID = visibleLoadingWorkflowID,
                let workflow = workflowManager.workflows.first(where: { $0.id == workflowID }) {
                 Text("正在运行“\(workflow.name)”：第 \(workflowManager.currentNodeIndex + 1) 步，共 \(workflow.nodes.filter(\.isEnabled).count) 步")
                     .font(.footnote)
@@ -277,7 +277,7 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .foregroundStyle(.primary)
             // Keep the keyboard inset and trailing controls stable throughout the focus transition.
-            .frame(height: Design.minimumTarget)
+            .frame(height: AppTheme.minimumTarget)
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
             .animation(toolbarFocusTransition, value: isFocusMode)
@@ -287,7 +287,7 @@ struct ContentView: View {
 
     private var workflowToolbar: some View {
         GeometryReader { geometry in
-            let buttonWidth = Design.minimumTarget
+            let buttonWidth = AppTheme.minimumTarget
             let spacing: CGFloat = 4
             let inset: CGFloat = 4
             let buttonCount = workflowManager.openWorkflows.count + 1
@@ -308,10 +308,10 @@ struct ContentView: View {
                             Button(workflow.name, systemImage: workflow.icon) { handleWorkflowTap(workflow) }
                         }
                         Divider()
-                        Button("工作流设置", systemImage: "slider.horizontal.3") { showWorkflowConfig = true }
+                        Button("工作流设置", systemImage: "slider.horizontal.3") { isWorkflowSettingsPresented = true }
                     } label: {
                         Image(systemName: "arrow.triangle.branch")
-                            .font(Design.controlFont)
+                            .font(AppTheme.controlFont)
                             .frame(width: buttonWidth, height: buttonWidth)
                     }
                     .accessibilityLabel("选择工作流")
@@ -339,28 +339,28 @@ struct ContentView: View {
             .controlSurface(emphasized: isFocusMode)
             .glassEffectID("workflow", in: toolbarGlassNamespace)
         }
-        .frame(height: Design.minimumTarget)
+        .frame(height: AppTheme.minimumTarget)
     }
 
     private var canRestoreDraft: Bool {
-        draftText.isEmpty && selectedTags.isEmpty && historyManager.hasRestorableDraft
+        draftText.isEmpty && selectedTags.isEmpty && noteStore.hasRestorableDraft
     }
 
     private var clearDraftLabel: String {
-        if canRestoreDraft { return historyManager.hasLastClearedText ? "恢复草稿" : "恢复标签" }
+        if canRestoreDraft { return noteStore.hasLastClearedText ? "恢复草稿" : "恢复标签" }
         return draftText.isEmpty ? "清除标签" : "清除草稿"
     }
 
     private var clearDraftButton: some View {
         Button(action: clearText) {
             Image(systemName: canRestoreDraft ? "arrow.uturn.backward" : "xmark")
-                .font(Design.controlFont)
-                .frame(width: Design.minimumTarget, height: Design.minimumTarget)
+                .font(AppTheme.controlFont)
+                .frame(width: AppTheme.minimumTarget, height: AppTheme.minimumTarget)
         }
         .controlSurface()
         .accessibilityLabel(clearDraftLabel)
         .accessibilityHint(canRestoreDraft ? "撤销上一次清除" : "清除后可使用恢复按钮撤销")
-        .disabled(processingWorkflowId != nil || (draftText.isEmpty && selectedTags.isEmpty && !canRestoreDraft))
+        .disabled(processingWorkflowID != nil || (draftText.isEmpty && selectedTags.isEmpty && !canRestoreDraft))
     }
 
     private var focusOrTagButton: some View {
@@ -368,13 +368,13 @@ struct ContentView: View {
             if isFocusMode {
                 exitFocusMode()
             } else {
-                showTagSelector = true
+                isTagPickerPresented = true
             }
         } label: {
             Image(systemName: isFocusMode ? "viewfinder" : "tag")
-                .font(Design.controlFont)
+                .font(AppTheme.controlFont)
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: Design.minimumTarget, height: Design.minimumTarget)
+                .frame(width: AppTheme.minimumTarget, height: AppTheme.minimumTarget)
                 .overlay(alignment: .topTrailing) {
                     if !isFocusMode && !selectedTags.isEmpty && !dynamicTypeSize.isAccessibilitySize {
                         Text(selectedTags.count.formatted())
@@ -389,19 +389,19 @@ struct ContentView: View {
         .accessibilityValue(isFocusMode ? "" : (selectedTags.isEmpty ? "未选择" : selectedTags.joined(separator: "、")))
         .accessibilityHint(isFocusMode ? "显示其他工作流" : "")
         .accessibilityFocused($accessibilityFocus, equals: .tags)
-        .disabled(processingWorkflowId != nil)
+        .disabled(processingWorkflowID != nil)
     }
 
     private var workflowSettingsButton: some View {
-        Button { showWorkflowConfig = true } label: {
+        Button { isWorkflowSettingsPresented = true } label: {
             Image(systemName: "slider.horizontal.3")
-                .font(Design.controlFont)
-                .frame(width: Design.minimumTarget, height: Design.minimumTarget)
+                .font(AppTheme.controlFont)
+                .frame(width: AppTheme.minimumTarget, height: AppTheme.minimumTarget)
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("工作流设置")
         .accessibilityFocused($accessibilityFocus, equals: .workflows)
-        .disabled(processingWorkflowId != nil)
+        .disabled(processingWorkflowID != nil)
     }
 
     private func workflowButton(for workflow: Workflow, focused: Bool = false) -> some View {
@@ -409,10 +409,10 @@ struct ContentView: View {
             handleWorkflowTap(workflow)
         } label: {
             HStack(spacing: 8) {
-                if visibleLoadingWorkflowId == workflow.id {
+                if visibleLoadingWorkflowID == workflow.id {
                     ProgressView()
                 } else {
-                    Image(systemName: workflow.icon).font(Design.controlFont)
+                    Image(systemName: workflow.icon).font(AppTheme.controlFont)
                 }
                 if focused {
                     Text(workflow.name)
@@ -422,9 +422,9 @@ struct ContentView: View {
                 }
             }
             .foregroundStyle(focused ? Color.white : Color.primary)
-            .tint(focused ? Color.white : Design.controlColor)
+            .tint(focused ? Color.white : AppTheme.controlColor)
             .padding(.horizontal, focused ? 16 : 0)
-            .frame(width: focused ? nil : Design.minimumTarget, height: Design.minimumTarget)
+            .frame(width: focused ? nil : AppTheme.minimumTarget, height: AppTheme.minimumTarget)
             .frame(maxWidth: focused ? .infinity : nil)
             .contentShape(Capsule())
         }
@@ -438,7 +438,7 @@ struct ContentView: View {
             }
         )
         .accessibilityLabel(workflow.name)
-        .accessibilityValue(visibleLoadingWorkflowId == workflow.id ? "正在运行工作流" : (focused ? "专注模式" : ""))
+        .accessibilityValue(visibleLoadingWorkflowID == workflow.id ? "正在运行工作流" : (focused ? "专注模式" : ""))
         .accessibilityHint(workflowActionHint(for: workflow))
         .accessibilityAction(named: focused ? "退出专注模式" : "进入专注模式") {
             if focused { exitFocusMode() } else { enterFocusMode(workflow) }
@@ -460,7 +460,7 @@ struct ContentView: View {
                 DraftTextView(
                     text: Binding(
                         get: { draftText },
-                        set: { historyManager.updateDraftText($0) }
+                        set: { noteStore.updateDraftText($0) }
                     ),
                     isFocused: $isTextEditorFocused,
                     inputSessionResetToken: inputSessionResetToken,
@@ -473,23 +473,23 @@ struct ContentView: View {
                 )
                 .padding(.horizontal, 16)
             }
-            .frame(maxWidth: Design.readingWidth, maxHeight: .infinity)
+            .frame(maxWidth: AppTheme.readingWidth, maxHeight: .infinity)
             .frame(maxWidth: .infinity)
             .padding(.top, 12)
 
             // Wait for the first load so the hint doesn't flash before existing records arrive.
-            if !isFocusMode && draftText.isEmpty && historyManager.hasLoadedHistory && !historyManager.hasSavedItems {
+            if !isFocusMode && draftText.isEmpty && noteStore.hasLoadedNotes && !noteStore.hasSavedItems {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("草稿随输入自动保存。添加“保存记录”步骤后，就能在记录列表中回顾。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("添加保存步骤") { showWorkflowConfig = true }
+                    Button("添加保存步骤") { isWorkflowSettingsPresented = true }
                         .font(.subheadline)
                         .frame(minHeight: 44)
                 }
                 .padding(.horizontal, 20)
-                .frame(maxWidth: Design.readingWidth, alignment: .leading)
+                .frame(maxWidth: AppTheme.readingWidth, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
         }
@@ -518,17 +518,17 @@ struct ContentView: View {
         
         keyboardTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled, !showHistory, !showAgentChat, !isPresentingSheet else { return }
+            guard !Task.isCancelled, !isNoteLibraryPresented, !isAgentChatPresented, !isPresentingSheet else { return }
             isTextEditorFocused = true
             
             try? await Task.sleep(for: .milliseconds(100))
-            guard !Task.isCancelled, !showHistory, !showAgentChat, !isPresentingSheet else { return }
+            guard !Task.isCancelled, !isNoteLibraryPresented, !isAgentChatPresented, !isPresentingSheet else { return }
             if !isTextEditorFocused {
                 isTextEditorFocused = true
             }
             
             try? await Task.sleep(for: .milliseconds(100))
-            guard !Task.isCancelled, !showHistory, !showAgentChat, !isPresentingSheet else { return }
+            guard !Task.isCancelled, !isNoteLibraryPresented, !isAgentChatPresented, !isPresentingSheet else { return }
             if !isTextEditorFocused {
                 isTextEditorFocused = true
             }
@@ -542,44 +542,44 @@ struct ContentView: View {
         }
     }
 
-    private func navigateToHistory(searchText: String = "") {
-        if historyManager.isUsingLocalFallback || historyManager.hasPendingICloudDownloads {
-            historyManager.refreshFromEnvironment()
+    private func openNoteLibrary(searchText: String = "") {
+        if noteStore.isUsingLocalFallback || noteStore.hasPendingICloudDownloads {
+            noteStore.refreshFromEnvironment()
         } else {
-            historyManager.loadItemsIfNeeded()
+            noteStore.loadItemsIfNeeded()
         }
-        historySearchText = searchText
+        noteSearchText = searchText
         isTextEditorFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         Task { @MainActor in
-            showHistory = true
+            isNoteLibraryPresented = true
         }
     }
 
     private func clearText() {
         let announcement = canRestoreDraft ? "已\(clearDraftLabel)" : "已\(clearDraftLabel)，可以撤销"
         if canRestoreDraft {
-            if historyManager.hasLastClearedText {
+            if noteStore.hasLastClearedText {
                 interruptDraftInputSession()
             }
-            historyManager.restoreLastClearedDraft()
+            noteStore.restoreLastClearedDraft()
         } else {
             if !draftText.isEmpty {
                 interruptDraftInputSession()
             }
-            historyManager.clearDraft()
+            noteStore.clearDraft()
         }
         showStatus(announcement)
     }
 
     private func enterFocusMode(_ workflow: Workflow, fromLongPress: Bool = false) {
-        guard workflow.kind == .manual, processingWorkflowId == nil else { return }
+        guard workflow.kind == .manual, processingWorkflowID == nil else { return }
         suppressNextWorkflowTap = fromLongPress
         focusedWorkflowIDRaw = workflow.id.uuidString
     }
 
     private func exitFocusMode(fromLongPress: Bool = false) {
-        guard isFocusMode, processingWorkflowId == nil else { return }
+        guard isFocusMode, processingWorkflowID == nil else { return }
         if fromLongPress {
             suppressNextWorkflowTap = true
         }
@@ -598,7 +598,7 @@ struct ContentView: View {
     private func performWorkflowSend(_ workflow: Workflow) {
         if draftText.isEmpty {
             if !selectedTags.isEmpty {
-                historyManager.clearDraft()
+                noteStore.clearDraft()
             }
             enqueueSend {
                 await sendReturnKey(for: workflow)
@@ -609,8 +609,8 @@ struct ContentView: View {
         interruptDraftInputSession()
 
         if draftText.hasPrefix("打开调试模式") {
-            historyManager.clearDraft()
-            showDebugView = true
+            noteStore.clearDraft()
+            isDebugPresented = true
             return
         }
 
@@ -625,7 +625,7 @@ struct ContentView: View {
 
         let text = draftText
         let tags = selectedTags
-        historyManager.clearDraft()
+        noteStore.clearDraft()
         enqueueSend {
             await executeWorkflow(workflow, input: text, tags: tags)
         }
@@ -660,23 +660,23 @@ struct ContentView: View {
     }
     
     private func executeWorkflow(_ workflow: Workflow, input: String, tags: [String]) async -> Bool {
-        processingWorkflowId = workflow.id
-        visibleLoadingWorkflowId = nil
+        processingWorkflowID = workflow.id
+        visibleLoadingWorkflowID = nil
         workflowLoadingTask?.cancel()
         workflowLoadingTask = Task {
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                guard processingWorkflowId == workflow.id else { return }
-                visibleLoadingWorkflowId = workflow.id
+                guard processingWorkflowID == workflow.id else { return }
+                visibleLoadingWorkflowID = workflow.id
             }
         }
 
         defer {
             workflowLoadingTask?.cancel()
             workflowLoadingTask = nil
-            visibleLoadingWorkflowId = nil
-            processingWorkflowId = nil
+            visibleLoadingWorkflowID = nil
+            processingWorkflowID = nil
         }
 
         do {
@@ -690,7 +690,7 @@ struct ContentView: View {
                 if draftText.isEmpty {
                     performSave(text: result.finalText, tags: result.tags)
                 } else {
-                    historyManager.addRecord(result.finalText, tags: result.tags)
+                    noteStore.addRecord(result.finalText, tags: result.tags)
                 }
             }
             showStatus(result.didCopyToClipboard ? "“\(workflow.name)”已完成，文本已复制到剪贴板。" : "“\(workflow.name)”已完成。")
@@ -699,7 +699,7 @@ struct ContentView: View {
             workflowErrorTitle = "“\(workflow.name)”未完成"
             workflowError = error
             if draftText.isEmpty {
-                historyManager.restoreLastClearedDraft()
+                noteStore.restoreLastClearedDraft()
             }
             workflowErrorContext = draftText == input ? "原文已恢复到输入框。" : ""
             if workflowManager.currentNodeIndex > 0 {
@@ -711,9 +711,9 @@ struct ContentView: View {
     }
     
     private func performSave(text: String, tags: [String]) {
-        historyManager.updateDraftText(text)
-        historyManager.replaceDraftTags(tags)
-        historyManager.finalizeDraft()
+        noteStore.updateDraftText(text)
+        noteStore.replaceDraftTags(tags)
+        noteStore.finalizeDraft()
     }
 
     private func interruptDraftInputSession() {
@@ -721,13 +721,13 @@ struct ContentView: View {
     }
 }
 
-/// Keeps the pushed screen's initializer out of ContentView's update path. ContentView
+/// Keeps the pushed screen's initializer out of QuickCaptureView's update path. QuickCaptureView
 /// re-evaluates on every keystroke; these wrappers only rebuild when their inputs change.
-private struct HistoryDestination: View, Equatable {
+private struct NoteLibraryDestination: View, Equatable {
     let initialSearchText: String
 
     var body: some View {
-        HistoryView(initialSearchText: initialSearchText)
+        NoteLibraryView(initialSearchText: initialSearchText)
             .background { RootReturnButtonBehavior() }
     }
 }
@@ -957,5 +957,5 @@ struct DraftTextView: UIViewRepresentable {
 }
 
 #Preview {
-    ContentView()
+    QuickCaptureView()
 }

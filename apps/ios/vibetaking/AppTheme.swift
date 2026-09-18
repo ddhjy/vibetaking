@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum Design {
+enum AppTheme {
     // Neutral controls leave indigo for tags and meaningful selection states.
     static let controlColor = Color(.label)
     static let primaryColor = Color(.systemIndigo)
@@ -31,7 +31,7 @@ struct AppAppearance: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .tint(Design.controlColor)
+            .tint(AppTheme.controlColor)
             .transaction { transaction in
                 if reduceMotion {
                     transaction.animation = nil

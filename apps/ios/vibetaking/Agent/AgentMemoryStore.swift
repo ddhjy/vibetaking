@@ -32,7 +32,7 @@ class AgentMemoryStore {
     private init() {}
 
     var memoryDirectory: URL {
-        let dir = HistoryManager.shared.agentStorageRootURL
+        let dir = NoteStore.shared.agentStorageRootURL
             .appendingPathComponent("_agent", isDirectory: true)
             .appendingPathComponent("memory", isDirectory: true)
         if !FileManager.default.fileExists(atPath: dir.path) {

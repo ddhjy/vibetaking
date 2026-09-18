@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct VibetakingApp: App {
+struct VibeTakingApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var demoMode = DemoModeManager.shared
 
@@ -11,21 +11,21 @@ struct VibetakingApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            QuickCaptureView()
                 .id(demoMode.isEnabled)
                 .modifier(AppAppearance())
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
-                // First load comes from ContentView.onAppear. Refreshing here as well
+                // First load comes from QuickCaptureView.onAppear. Refreshing here as well
                 // queued a second full disk scan on every cold start.
-                if HistoryManager.shared.hasLoadedHistory {
-                    HistoryManager.shared.refreshFromEnvironment()
+                if NoteStore.shared.hasLoadedNotes {
+                    NoteStore.shared.refreshFromEnvironment()
                 }
             case .inactive, .background:
                 // Debounced draft edits must reach disk before the app can be suspended.
-                HistoryManager.shared.flushPendingDraftWrite()
+                NoteStore.shared.flushPendingDraftWrite()
             @unknown default:
                 break
             }

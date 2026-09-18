@@ -26,6 +26,18 @@
 
 界面回归还应覆盖：AI 推荐进行中下拉关闭、下拉后取消关闭、点击“完成”，以及从草稿和记录页打开标签选择后保存更改。
 
+## 命名与配置字段兼容性
+
+```sh
+./apps/ios/tests/run-naming-compatibility-checks.sh
+```
+
+使用生产 AppConfigurationTransfer.swift 中的配置模型检查旧 apiToken、selectedWorkflowId
+字段的解码、回写，以及旧版解码器和缺省可选字段的兼容性。
+
+Workflow 和两个共享状态对象使用测试替身；不读取真实密钥、不访问网络，
+也不验证完整工作流编码、配置应用、Keychain 或 iCloud。相关场景仍需独立回归。
+
 ## 首页浮动工具栏导航回归
 
 先安装当前代码，再通过独立的 XCTest UI runner 检查手机上的应用：

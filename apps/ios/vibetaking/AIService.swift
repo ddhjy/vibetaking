@@ -14,7 +14,7 @@ class AIService {
     private init() {}
 
     func fetchModels() async throws -> [AIModel] {
-        guard let token = SettingsManager.shared.aiApiToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let token = AISettingsStore.shared.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
             throw AIServiceError.missingToken
         }
@@ -34,7 +34,7 @@ class AIService {
     }
     
     func process(text: String, prompt: String) async throws -> String {
-        guard let token = SettingsManager.shared.aiApiToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let token = AISettingsStore.shared.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
             throw AIServiceError.missingToken
         }
@@ -47,9 +47,9 @@ class AIService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 60
         
-        let selectedModelID = SettingsManager.shared.aiModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selectedModelID = AISettingsStore.shared.modelID.trimmingCharacters(in: .whitespacesAndNewlines)
         let modelID = selectedModelID.isEmpty
-            ? SettingsManager.defaultAIModelID
+            ? AISettingsStore.defaultModelID
             : selectedModelID
         
         let body: [String: Any] = [
@@ -349,7 +349,7 @@ class AIService {
     }
 
     private func endpointURL(path: String) throws -> URL {
-        let baseURLString = SettingsManager.normalizedAIBaseURLString(SettingsManager.shared.aiBaseURLString)
+        let baseURLString = AISettingsStore.normalizedBaseURLString(AISettingsStore.shared.baseURLString)
         let endpointString = "\(baseURLString)/\(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))"
 
         guard let url = URL(string: endpointString) else {

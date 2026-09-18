@@ -46,7 +46,7 @@ struct FileReadTool: AgentTool {
         if let skillId = SkillStore.shared.skillIdFromPath(rawPath) {
             SkillStore.shared.recordSkillUse(skillId)
         }
-        let root = HistoryManager.shared.agentStorageRootURL
+        let root = NoteStore.shared.agentStorageRootURL
         guard let url = resolveScopedPath(rawPath, root: root) else {
             return .failure("路径越界：只允许访问记录目录内的文件")
         }
@@ -99,7 +99,7 @@ struct FileWriteTool: AgentTool {
         guard let content = args["content"] as? String else {
             return .failure("缺少 content 参数")
         }
-        let root = HistoryManager.shared.agentStorageRootURL
+        let root = NoteStore.shared.agentStorageRootURL
         guard let url = resolveScopedPath(rawPath, root: root) else {
             return .failure("路径越界：只允许写入记录目录内的文件")
         }

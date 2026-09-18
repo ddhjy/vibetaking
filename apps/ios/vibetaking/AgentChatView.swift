@@ -93,16 +93,16 @@ class AgentChatViewModel {
     }
 
     private static func makeProvider() throws -> AgentProvider {
-        let settings = SettingsManager.shared
-        guard let token = settings.aiApiToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+        let settings = AISettingsStore.shared
+        guard let token = settings.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
             throw LLMError.missingCredentials
         }
-        let base = SettingsManager.normalizedAIBaseURLString(settings.aiBaseURLString)
-        let model = settings.aiModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = AISettingsStore.normalizedBaseURLString(settings.baseURLString)
+        let model = settings.modelID.trimmingCharacters(in: .whitespacesAndNewlines)
         return OpenAIResponsesAgentProvider(
             apiKey: token,
-            modelId: model.isEmpty ? SettingsManager.defaultAIModelID : model,
+            modelId: model.isEmpty ? AISettingsStore.defaultModelID : model,
             baseURLString: base
         )
     }
@@ -284,7 +284,7 @@ struct AgentChatView: View {
     @State private var permissionManager = OffloadPermissionManager.shared
     @State private var showSessionList = false
     @State private var showSettings = false
-    @State private var settings = SettingsManager.shared
+    @State private var settings = AISettingsStore.shared
     @FocusState private var inputFocused: Bool
 
     init(session: AgentChatSession? = nil) {
@@ -292,7 +292,7 @@ struct AgentChatView: View {
     }
 
     private var hasAIKey: Bool {
-        !(settings.aiApiToken ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !(settings.apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -315,7 +315,7 @@ struct AgentChatView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
-                    .frame(maxWidth: Design.readingWidth)
+                    .frame(maxWidth: AppTheme.readingWidth)
                     .frame(maxWidth: .infinity)
                 }
                 .scrollDismissesKeyboard(.interactively)
@@ -403,7 +403,7 @@ struct AgentChatView: View {
         .onAppear {
             AgentSessionStore.shared.loadIfNeeded()
             // 注册 offload 图片输出的落盘根目录（apple-clipboard get --image）。
-            noff_set_storage_root(HistoryManager.shared.agentStorageRootURL.path)
+            noff_set_storage_root(NoteStore.shared.agentStorageRootURL.path)
         }
     }
 
@@ -486,7 +486,7 @@ struct AgentChatView: View {
                     switch status {
                     case .running: ProgressView()
                     case .done: Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
-                    case .failed: Image(systemName: "exclamationmark.circle").foregroundStyle(Design.negativeColor)
+                    case .failed: Image(systemName: "exclamationmark.circle").foregroundStyle(AppTheme.negativeColor)
                     }
                     Text(title).font(.subheadline).foregroundStyle(.primary)
                 }
@@ -502,7 +502,7 @@ struct AgentChatView: View {
                 Label {
                     Text(message).foregroundStyle(.primary)
                 } icon: {
-                    Image(systemName: "exclamationmark.circle").foregroundStyle(Design.negativeColor)
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(AppTheme.negativeColor)
                 }
                 .font(.subheadline)
                 .padding(.vertical, 8)
@@ -534,15 +534,15 @@ struct AgentChatView: View {
             if viewModel.isRunning {
                 Button("停止处理", systemImage: "stop.fill") { viewModel.cancel() }
                     .labelStyle(.iconOnly)
-                    .font(Design.controlFont)
+                    .font(AppTheme.controlFont)
                     .frame(minWidth: 44, minHeight: 44)
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.circle)
-                    .tint(Design.negativeColor)
+                    .tint(AppTheme.negativeColor)
             } else {
                 Button("发送消息", systemImage: "arrow.up") { viewModel.send() }
                     .labelStyle(.iconOnly)
-                    .font(Design.controlFont)
+                    .font(AppTheme.controlFont)
                     .frame(minWidth: 44, minHeight: 44)
                     .buttonStyle(.borderedProminent)
                     .buttonBorderShape(.circle)
@@ -551,7 +551,7 @@ struct AgentChatView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .frame(maxWidth: Design.readingWidth)
+        .frame(maxWidth: AppTheme.readingWidth)
         .frame(maxWidth: .infinity)
         .background(Color(.systemBackground))
     }

@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import zlib
 
-nonisolated struct HistoryItem: Identifiable, Equatable, Sendable {
+nonisolated struct Note: Identifiable, Equatable, Sendable {
     let id: UUID
     var fileName: String
     var text: String
@@ -101,8 +101,8 @@ enum NotesImportError: LocalizedError {
 
 @MainActor
 @Observable
-class TagManager {
-    static let shared = TagManager()
+class TagIndex {
+    static let shared = TagIndex()
     
     var tags: [String] = []
     
@@ -133,7 +133,7 @@ class TagManager {
         let counts: [String: Int]
     }
 
-    nonisolated static func snapshot(from items: [HistoryItem]) -> Snapshot {
+    nonisolated static func snapshot(from items: [Note]) -> Snapshot {
         var uniqueTags = Set<String>()
         var counts: [String: Int] = [:]
 
@@ -156,7 +156,7 @@ class TagManager {
         }
     }
 
-    func refreshTags(from items: [HistoryItem]) {
+    func refreshTags(from items: [Note]) {
         apply(snapshot: Self.snapshot(from: items))
     }
     
@@ -189,14 +189,14 @@ private actor DraftFileWriter {
 
 @MainActor
 @Observable
-class HistoryManager {
-    static let shared = HistoryManager()
+class NoteStore {
+    static let shared = NoteStore()
     
-    var items: [HistoryItem] = []
+    var items: [Note] = []
     private(set) var lastClearedText: String = ""
     private(set) var lastClearedTags: [String] = []
     var isLoading = false
-    private(set) var hasLoadedHistory = false
+    private(set) var hasLoadedNotes = false
     private(set) var isUsingLocalFallback = false
     private(set) var hasPendingICloudDownloads = false
     private var loadGeneration: UInt = 0
@@ -234,7 +234,7 @@ class HistoryManager {
     
     private let draftFileName = "_draft.md"
     
-    var currentDraft: HistoryItem {
+    var currentDraft: Note {
         if let draft = items.first(where: { $0.isDraft }) {
             return draft
         }
@@ -258,8 +258,8 @@ class HistoryManager {
         }
     }
     
-    private func createNewDraft() -> HistoryItem {
-        return HistoryItem(isDraft: true)
+    private func createNewDraft() -> Note {
+        return Note(isDraft: true)
     }
 
     private func discardLastClearedDraft() {
@@ -315,7 +315,7 @@ class HistoryManager {
         
         let now = Date.now
         let fileName = generateFileName(for: now)
-        let finalItem = HistoryItem(
+        let finalItem = Note(
             id: draft.id,
             fileName: fileName,
             text: draft.text,
@@ -333,10 +333,10 @@ class HistoryManager {
         let newDraft = createNewDraft()
         items.insert(newDraft, at: 0)
         
-        TagManager.shared.refreshTags(from: savedItems)
+        TagIndex.shared.refreshTags(from: savedItems)
     }
     
-    var savedItems: [HistoryItem] {
+    var savedItems: [Note] {
         items.filter { !$0.isDraft }
     }
 
@@ -345,7 +345,7 @@ class HistoryManager {
         items.contains { !$0.isDraft }
     }
     
-    func getSavedItems(filteredBy tagName: String?) -> [HistoryItem] {
+    func getSavedItems(filteredBy tagName: String?) -> [Note] {
         var result = savedItems
         if let tagName = tagName {
             result = result.filter { $0.tags.contains(tagName) }
@@ -353,7 +353,7 @@ class HistoryManager {
         return result
     }
     
-    func getSavedItems(filteredBy tags: [String]) -> [HistoryItem] {
+    func getSavedItems(filteredBy tags: [String]) -> [Note] {
         guard !tags.isEmpty else { return savedItems }
         return savedItems.filter { item in
             tags.allSatisfy { item.tags.contains($0) }
@@ -549,9 +549,9 @@ class HistoryManager {
 
     nonisolated private struct DiskLoadResult: Sendable {
         let storage: ICloudNotesStorage.Resolution
-        let loadedItems: [HistoryItem]
-        let draft: HistoryItem?
-        let tagSnapshot: TagManager.Snapshot
+        let loadedItems: [Note]
+        let draft: Note?
+        let tagSnapshot: TagIndex.Snapshot
         let cacheEntries: [String: NoteCacheEntry]
     }
 
@@ -611,11 +611,11 @@ class HistoryManager {
         fileName: String,
         createdAt: Date,
         cached: NoteCacheEntry?
-    ) -> HistoryItem {
+    ) -> Note {
         if let cached {
             return cached.makeItem(isDownloading: true)
         }
-        return HistoryItem(
+        return Note(
             fileName: fileName,
             createdAt: createdAt,
             isDownloading: true
@@ -630,7 +630,7 @@ class HistoryManager {
     ) -> DiskLoadResult {
         let documentsURL = resolution.url
         let dateFormatter = ICloudNotesStorage.makeNoteDateFormatter()
-        var itemsByFileName: [String: HistoryItem] = [:]
+        var itemsByFileName: [String: Note] = [:]
         var cacheEntries: [String: NoteCacheEntry] = [:]
         var pendingReads: [PendingRead] = []
         let isCloud = resolution.kind == .iCloud
@@ -698,7 +698,7 @@ class HistoryManager {
         }
         for (read, parsed) in zip(pendingReads, parsedNotes) {
             if let parsed {
-                itemsByFileName[read.fileName] = HistoryItem(
+                itemsByFileName[read.fileName] = Note(
                     fileName: read.fileName,
                     text: parsed.body,
                     createdAt: read.createdAt,
@@ -739,12 +739,12 @@ class HistoryManager {
         }
 
         let draftURL = documentsURL.appendingPathComponent(draftFileName)
-        var loadedDraft: HistoryItem?
+        var loadedDraft: Note?
         let draftContent = isCloud
             ? ICloudNotesStorage.readUTF8String(at: draftURL)
             : (try? String(contentsOf: draftURL, encoding: .utf8))
         if let content = draftContent, let parsed = parseMarkdownFile(content: content) {
-            loadedDraft = HistoryItem(
+            loadedDraft = Note(
                 text: parsed.body,
                 tags: parsed.tags,
                 isDraft: true
@@ -752,7 +752,7 @@ class HistoryManager {
         }
 
         let sortedItems = itemsByFileName.values.sorted { $0.createdAt > $1.createdAt }
-        let tagSnapshot = TagManager.snapshot(from: sortedItems.filter { !$0.isDownloading })
+        let tagSnapshot = TagIndex.snapshot(from: sortedItems.filter { !$0.isDownloading })
 
         return DiskLoadResult(
             storage: resolution,
@@ -811,7 +811,7 @@ class HistoryManager {
         )
         loadedItems = loadedItems.map { item in
             guard let previousID = previousIDsByFileName[item.fileName] else { return item }
-            return HistoryItem(
+            return Note(
                 id: previousID,
                 fileName: item.fileName,
                 text: item.text,
@@ -830,13 +830,13 @@ class HistoryManager {
         let mergedDraft = hasLiveDraftEdits ? liveDraft : (result.draft ?? liveDraft)
 
         items = [mergedDraft] + loadedItems
-        TagManager.shared.apply(snapshot: result.tagSnapshot)
+        TagIndex.shared.apply(snapshot: result.tagSnapshot)
         noteCache = cacheEntries
         isUsingLocalFallback = result.storage.kind == .local
             && ICloudNotesStorage.hasUsedICloud
             && !DemoModeManager.isEnabledFlag
         hasPendingICloudDownloads = loadedItems.contains(where: \.isDownloading)
-        hasLoadedHistory = true
+        hasLoadedNotes = true
         isLoading = false
         scheduleSnapshotWrite()
 
@@ -845,14 +845,14 @@ class HistoryManager {
         consumePendingReloadIfNeeded()
     }
 
-    private func applySnapshot(_ snapshot: HistorySnapshot) {
+    private func applySnapshot(_ snapshot: NoteSnapshot) {
         noteCache = Dictionary(uniqueKeysWithValues: snapshot.entries.map { ($0.fileName, $0) })
         let loadedItems = snapshot.entries
             .map { $0.makeItem(isDownloading: false) }
             .sorted { $0.createdAt > $1.createdAt }
 
         items = [currentDraft] + loadedItems
-        TagManager.shared.apply(snapshot: TagManager.snapshot(from: loadedItems))
+        TagIndex.shared.apply(snapshot: TagIndex.snapshot(from: loadedItems))
         isUsingLocalFallback = snapshot.storageKind == .local
             && ICloudNotesStorage.hasUsedICloud
             && !DemoModeManager.isEnabledFlag
@@ -875,18 +875,18 @@ class HistoryManager {
 
     private func writeSnapshotNow() {
         guard let storage = _cachedStorage, storage.kind != .demo else { return }
-        let snapshot = HistorySnapshot(
-            version: HistorySnapshotStore.currentVersion,
+        let snapshot = NoteSnapshot(
+            version: NoteSnapshotStore.currentVersion,
             storageKind: storage.kind,
             storagePath: storage.url.path,
             entries: noteCache.values.sorted { $0.createdAt > $1.createdAt }
         )
         Task.detached(priority: .utility) {
-            HistorySnapshotStore.save(snapshot)
+            NoteSnapshotStore.save(snapshot)
         }
     }
 
-    private func updateNoteCache(for item: HistoryItem, at fileURL: URL) {
+    private func updateNoteCache(for item: Note, at fileURL: URL) {
         guard !item.fileName.isEmpty, !item.isDownloading else { return }
         let stamp = Self.fileStamp(at: fileURL)
         noteCache[item.fileName] = NoteCacheEntry(
@@ -947,7 +947,7 @@ class HistoryManager {
         do {
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
             
-            let newItem = HistoryItem(
+            let newItem = Note(
                 fileName: fileName,
                 text: text,
                 createdAt: now,
@@ -956,17 +956,17 @@ class HistoryManager {
             )
             items.insert(newItem, at: 0)
             updateNoteCache(for: newItem, at: fileURL)
-            TagManager.shared.refreshTags(from: items)
+            TagIndex.shared.refreshTags(from: items)
             
         } catch {
             print("Failed to write record to iCloud: \(error)")
         }
     }
     
-    func deleteRecord(_ item: HistoryItem) {
+    func deleteRecord(_ item: Note) {
         removeFiles(for: item)
         items.removeAll { $0.id == item.id }
-        TagManager.shared.refreshTags(from: items)
+        TagIndex.shared.refreshTags(from: items)
     }
     
     func deleteRecords(at offsets: IndexSet) {
@@ -974,7 +974,7 @@ class HistoryManager {
             removeFiles(for: items[index])
         }
         items.remove(atOffsets: offsets)
-        TagManager.shared.refreshTags(from: items)
+        TagIndex.shared.refreshTags(from: items)
     }
     
     func deleteRecords(ids: Set<UUID>) {
@@ -986,7 +986,7 @@ class HistoryManager {
         
         items.removeAll { ids.contains($0.id) }
         
-        TagManager.shared.refreshTags(from: items)
+        TagIndex.shared.refreshTags(from: items)
     }
     
     func clearAll() {
@@ -994,10 +994,10 @@ class HistoryManager {
             removeFiles(for: item)
         }
         items.removeAll()
-        TagManager.shared.refreshTags(from: items)
+        TagIndex.shared.refreshTags(from: items)
     }
 
-    private func removeFiles(for item: HistoryItem) {
+    private func removeFiles(for item: Note) {
         guard !item.fileName.isEmpty else { return }
         ICloudNotesStorage.removeNoteFiles(
             named: item.fileName,
@@ -1024,7 +1024,7 @@ class HistoryManager {
             } else {
                 saveItem(items[index])
             }
-            TagManager.shared.refreshTags(from: savedItems)
+            TagIndex.shared.refreshTags(from: savedItems)
         }
     }
     
@@ -1039,7 +1039,7 @@ class HistoryManager {
         } else {
             saveItem(items[index])
         }
-        TagManager.shared.refreshTags(from: savedItems)
+        TagIndex.shared.refreshTags(from: savedItems)
     }
     
     func toggleTag(for itemId: UUID, tagName: String) {
@@ -1057,10 +1057,10 @@ class HistoryManager {
         } else {
             saveItem(items[index])
         }
-        TagManager.shared.refreshTags(from: savedItems)
+        TagIndex.shared.refreshTags(from: savedItems)
     }
     
-    func getItems(filteredBy tagName: String?) -> [HistoryItem] {
+    func getItems(filteredBy tagName: String?) -> [Note] {
         guard let tagName = tagName else { return items }
         return items.filter { $0.tags.contains(tagName) }
     }
@@ -1081,7 +1081,7 @@ class HistoryManager {
                 saveItem(items[index])
             }
         }
-        TagManager.shared.refreshTags(from: savedItems)
+        TagIndex.shared.refreshTags(from: savedItems)
     }
     
     func batchRemoveTag(from itemIds: Set<UUID>, tagName: String) {
@@ -1097,7 +1097,7 @@ class HistoryManager {
                 saveItem(items[index])
             }
         }
-        TagManager.shared.refreshTags(from: savedItems)
+        TagIndex.shared.refreshTags(from: savedItems)
     }
     
     func renameTag(from oldName: String, to newName: String) {
@@ -1120,10 +1120,10 @@ class HistoryManager {
             }
         }
         
-        TagManager.shared.refreshTags(from: savedItems)
+        TagIndex.shared.refreshTags(from: savedItems)
     }
     
-    private func saveItem(_ item: HistoryItem) {
+    private func saveItem(_ item: Note) {
         guard !item.isDownloading, !item.fileName.isEmpty else { return }
         let documentsURL = storageURL
         
@@ -1155,7 +1155,7 @@ class HistoryManager {
         items = []
         lastClearedText = ""
         lastClearedTags = []
-        hasLoadedHistory = false
+        hasLoadedNotes = false
         isUsingLocalFallback = false
         hasPendingICloudDownloads = false
         isLoading = false
@@ -1181,7 +1181,7 @@ class HistoryManager {
             }
             return
         }
-        if hasLoadedHistory && !force && !hasPendingICloudDownloads && !reevaluateStorage { return }
+        if hasLoadedNotes && !force && !hasPendingICloudDownloads && !reevaluateStorage { return }
 
         isLoading = true
         loadGeneration += 1
@@ -1192,11 +1192,11 @@ class HistoryManager {
         let previousStoragePath = _cachedStorage?.url.path
         let draftFileName = self.draftFileName
         let existingCache = noteCache
-        let shouldRestoreSnapshot = !hasLoadedHistory && noteCache.isEmpty && !DemoModeManager.isEnabledFlag
+        let shouldRestoreSnapshot = !hasLoadedNotes && noteCache.isEmpty && !DemoModeManager.isEnabledFlag
 
         Task.detached(priority: .userInitiated) {
             let snapshot = shouldRestoreSnapshot
-                ? PerformanceLog.measure("history.snapshot.load") { HistorySnapshotStore.load() }
+                ? PerformanceLog.measure("history.snapshot.load") { NoteSnapshotStore.load() }
                 : nil
             if let snapshot, snapshot.storageKind != .demo, !snapshot.entries.isEmpty {
                 await MainActor.run {
@@ -1254,7 +1254,7 @@ class HistoryManager {
             queue: .main
         ) { _ in
             Task { @MainActor in
-                HistoryManager.shared.refreshFromEnvironment()
+                NoteStore.shared.refreshFromEnvironment()
             }
         }
     }
@@ -1304,7 +1304,7 @@ class HistoryManager {
             queue: .main
         ) { _ in
             Task { @MainActor in
-                HistoryManager.shared.handleMetadataQueryChange()
+                NoteStore.shared.handleMetadataQueryChange()
             }
         }
         let updateObserver = NotificationCenter.default.addObserver(
@@ -1313,7 +1313,7 @@ class HistoryManager {
             queue: .main
         ) { _ in
             Task { @MainActor in
-                HistoryManager.shared.handleMetadataQueryChange()
+                NoteStore.shared.handleMetadataQueryChange()
             }
         }
 
@@ -1369,11 +1369,11 @@ class HistoryManager {
         }
     }
 
-    private func downloadingItemsFromMetadataQuery(existing: Set<String>) -> [HistoryItem] {
+    private func downloadingItemsFromMetadataQuery(existing: Set<String>) -> [Note] {
         guard let query = metadataQuery else { return [] }
 
         let formatter = ICloudNotesStorage.makeNoteDateFormatter()
-        var extras: [HistoryItem] = []
+        var extras: [Note] = []
         var seen = existing
 
         for object in query.results {
@@ -1472,7 +1472,7 @@ class HistoryManager {
         var reservedFileNames = Set(savedItems.map(\.fileName))
         reservedFileNames.insert(draftFileName)
         
-        var importedItems: [HistoryItem] = []
+        var importedItems: [Note] = []
         var skippedCount = 0
         
         for candidate in candidates {
@@ -1495,7 +1495,7 @@ class HistoryManager {
             let createdAt = uniqueImportDate(startingAt: preferredDate, reservedFileNames: &reservedFileNames)
             let fileName = generateFileName(for: createdAt)
             let description = parsed.description.isEmpty ? String(parsed.body.prefix(50)) : parsed.description
-            let item = HistoryItem(
+            let item = Note(
                 fileName: fileName,
                 text: parsed.body,
                 createdAt: createdAt,
@@ -1524,7 +1524,7 @@ class HistoryManager {
         let draft = currentDraft
         let mergedSavedItems = (importedItems + savedItems).sorted { $0.createdAt > $1.createdAt }
         items = [draft] + mergedSavedItems
-        TagManager.shared.refreshTags(from: savedItems)
+        TagIndex.shared.refreshTags(from: savedItems)
         
         return NotesImportResult(importedCount: importedItems.count, skippedCount: skippedCount)
     }
@@ -1536,7 +1536,7 @@ private struct ImportCandidate {
     let content: String
 }
 
-private extension HistoryManager {
+private extension NoteStore {
     func uniqueImportDate(startingAt preferredDate: Date, reservedFileNames: inout Set<String>) -> Date {
         var candidateDate = preferredDate
         
@@ -1628,7 +1628,7 @@ private struct ZipEntry {
     }
 }
 
-private extension HistoryManager {
+private extension NoteStore {
     static func zipEntries(in data: Data) throws -> [ZipEntry] {
         let endOffset = try endOfCentralDirectoryOffset(in: data)
         let entryCount = try intFromUInt16(data, at: endOffset + 10)

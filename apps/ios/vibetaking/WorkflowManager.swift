@@ -161,14 +161,14 @@ class WorkflowManager {
     static let shared = WorkflowManager()
     
     var workflows: [Workflow] = []
-    var selectedWorkflowId: UUID?
+    var selectedWorkflowID: UUID?
     var isExecuting: Bool = false
     var currentNodeIndex: Int = 0
     var executionError: Error?
     
     private let workflowsStorageKey = "workflows_v2"
-    private let selectedWorkflowIdKey = "selectedWorkflowId"
-    private let legacyActiveWorkflowIdKey = "activeWorkflowId"
+    private let selectedWorkflowIDKey = "selectedWorkflowId"
+    private let legacyActiveWorkflowIDKey = "activeWorkflowId"
     private let legacyAutoPasteSyncEnabledKey = "autoPasteSyncEnabled"
     private let legacyAutoPasteHostKey = "autoPasteHost"
     private let legacyAutoPastePortKey = "autoPastePort"
@@ -177,7 +177,7 @@ class WorkflowManager {
     }
     
     var selectedWorkflow: Workflow {
-        if let id = selectedWorkflowId,
+        if let id = selectedWorkflowID,
            let wf = workflows.first(where: { $0.id == id }) {
             return wf
         }
@@ -203,8 +203,8 @@ class WorkflowManager {
     }
 
     func selectWorkflow(_ id: UUID) {
-        selectedWorkflowId = id
-        persistSelectedWorkflowId()
+        selectedWorkflowID = id
+        persistSelectedWorkflowID()
     }
     
     func canCloseWorkflow(_ id: UUID) -> Bool {
@@ -230,7 +230,7 @@ class WorkflowManager {
         guard wf.kind == .manual else { return }
         normalizeNodes(&wf.nodes)
         workflows.append(wf)
-        if selectedWorkflowId == nil {
+        if selectedWorkflowID == nil {
             selectWorkflow(wf.id)
         }
         saveWorkflows()
@@ -241,7 +241,7 @@ class WorkflowManager {
         guard workflows.count > 1 else { return }
 
         workflows.removeAll { $0.id == id }
-        if selectedWorkflowId == id, let firstWorkflowId = workflows.first?.id {
+        if selectedWorkflowID == id, let firstWorkflowId = workflows.first?.id {
             selectWorkflow(firstWorkflowId)
         }
         ensureOpenWorkflowExists()
@@ -344,15 +344,15 @@ class WorkflowManager {
 
         stripRemovedAutoPasteWorkflows()
         
-        let persistedSelection = AppDefaults.current.string(forKey: selectedWorkflowIdKey)
-            ?? AppDefaults.current.string(forKey: legacyActiveWorkflowIdKey)
+        let persistedSelection = AppDefaults.current.string(forKey: selectedWorkflowIDKey)
+            ?? AppDefaults.current.string(forKey: legacyActiveWorkflowIDKey)
         
         if let idStr = persistedSelection,
            let id = UUID(uuidString: idStr),
            workflows.contains(where: { $0.id == id }) {
-            selectedWorkflowId = id
+            selectedWorkflowID = id
         } else {
-            selectedWorkflowId = workflows.first?.id
+            selectedWorkflowID = workflows.first?.id
         }
         
         for i in workflows.indices {
@@ -373,7 +373,7 @@ class WorkflowManager {
 
     func exportConfiguration() -> AppWorkflowConfiguration {
         AppWorkflowConfiguration(
-            selectedWorkflowId: selectedWorkflowId,
+            selectedWorkflowID: selectedWorkflowID,
             items: workflows
         )
     }
@@ -389,16 +389,16 @@ class WorkflowManager {
             normalizeNodes(&workflows[i].nodes)
         }
 
-        if let selectedWorkflowId = configuration.selectedWorkflowId,
-           workflows.contains(where: { $0.id == selectedWorkflowId }) {
-            self.selectedWorkflowId = selectedWorkflowId
+        if let selectedWorkflowID = configuration.selectedWorkflowID,
+           workflows.contains(where: { $0.id == selectedWorkflowID }) {
+            self.selectedWorkflowID = selectedWorkflowID
         } else {
-            selectedWorkflowId = workflows.first?.id
+            selectedWorkflowID = workflows.first?.id
         }
 
         ensureOpenWorkflowExists()
         saveWorkflows()
-        persistSelectedWorkflowId()
+        persistSelectedWorkflowID()
     }
     
     private func normalizeNodes(_ nodes: inout [WorkflowNode]) {
@@ -545,19 +545,19 @@ class WorkflowManager {
     /// Agent 节点：把草稿交给多轮工具循环处理，返回最终文本。
     /// 复用聊天页的完整工具集（笔记 / 文件 / 记忆 / 设备）。
     private func executeAgentNode(prompt: String, input: String) async throws -> String {
-        let settings = SettingsManager.shared
-        guard let token = settings.aiApiToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+        let settings = AISettingsStore.shared
+        guard let token = settings.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else {
             throw LLMError.missingCredentials
         }
-        let base = SettingsManager.normalizedAIBaseURLString(settings.aiBaseURLString)
-        let model = settings.aiModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = AISettingsStore.normalizedBaseURLString(settings.baseURLString)
+        let model = settings.modelID.trimmingCharacters(in: .whitespacesAndNewlines)
         let provider = OpenAIResponsesAgentProvider(
             apiKey: token,
-            modelId: model.isEmpty ? SettingsManager.defaultAIModelID : model,
+            modelId: model.isEmpty ? AISettingsStore.defaultModelID : model,
             baseURLString: base
         )
-        noff_set_storage_root(HistoryManager.shared.agentStorageRootURL.path)
+        noff_set_storage_root(NoteStore.shared.agentStorageRootURL.path)
 
         let engine = AgentEngine(registry: AgentChatViewModel.makeDefaultRegistry())
         let systemPrompt = AgentSystemPrompt.build(
@@ -594,8 +594,8 @@ class WorkflowManager {
         guard !workflows.isEmpty else { return }
         guard !workflows.contains(where: \.isOpen) else { return }
         
-        if let selectedWorkflowId,
-           let idx = workflows.firstIndex(where: { $0.id == selectedWorkflowId }) {
+        if let selectedWorkflowID,
+           let idx = workflows.firstIndex(where: { $0.id == selectedWorkflowID }) {
             workflows[idx].isOpen = true
         } else {
             workflows[0].isOpen = true
@@ -614,11 +614,11 @@ class WorkflowManager {
         }
     }
 
-    private func persistSelectedWorkflowId() {
-        if let selectedWorkflowId {
-            AppDefaults.current.set(selectedWorkflowId.uuidString, forKey: selectedWorkflowIdKey)
+    private func persistSelectedWorkflowID() {
+        if let selectedWorkflowID {
+            AppDefaults.current.set(selectedWorkflowID.uuidString, forKey: selectedWorkflowIDKey)
         } else {
-            AppDefaults.current.removeObject(forKey: selectedWorkflowIdKey)
+            AppDefaults.current.removeObject(forKey: selectedWorkflowIDKey)
         }
     }
 

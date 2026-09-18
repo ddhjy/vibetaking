@@ -34,7 +34,7 @@ private struct WorkflowEditButton: View {
                 editMode?.wrappedValue = isEditing ? .inactive : .active
             }
         }
-        .tint(Design.controlColor)
+        .tint(AppTheme.controlColor)
         .id(WorkflowToolbarIdentity.editButton)
     }
 }
@@ -56,9 +56,9 @@ private struct WorkflowEditToolbarItem: ToolbarContent {
 }
 
 private enum WorkflowConfigStyle {
-    static let controlTint = Design.primaryColor
+    static let controlTint = AppTheme.primaryColor
     static let selectedForeground = Color.white
-    static let nodeBadgeFill = Design.primaryColor.opacity(0.10)
+    static let nodeBadgeFill = AppTheme.primaryColor.opacity(0.10)
 }
 
 struct WorkflowConfigView: View {
@@ -72,7 +72,7 @@ struct WorkflowConfigView: View {
     @State private var workflowManager = WorkflowManager.shared
     @State private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
     @State private var compactPath: [UUID] = []
-    @State private var detailWorkflowId: UUID?
+    @State private var detailWorkflowID: UUID?
     @State private var presentation: WorkflowConfigPresentation?
 
     var body: some View {
@@ -90,7 +90,7 @@ struct WorkflowConfigView: View {
                 primaryButton: .destructive(Text("删除工作流")) {
                     workflowManager.deleteWorkflow(workflow.id)
                     compactPath.removeAll { $0 == workflow.id }
-                    detailWorkflowId = workflowManager.selectedWorkflowId
+                    detailWorkflowID = workflowManager.selectedWorkflowID
                 },
                 secondaryButton: .cancel(Text("保留工作流"))
             )
@@ -114,7 +114,7 @@ struct WorkflowConfigView: View {
         .onChange(of: horizontalSizeClass) { _, _ in
             resetNavigationForCurrentSizeClass()
         }
-        .onChange(of: workflowManager.selectedWorkflowId) { oldValue, _ in
+        .onChange(of: workflowManager.selectedWorkflowID) { oldValue, _ in
             if let oldValue {
                 normalizeWorkflowName(oldValue)
             }
@@ -196,13 +196,13 @@ struct WorkflowConfigView: View {
     }
 
     private var detailWorkflow: Workflow? {
-        guard let detailWorkflowId else { return nil }
-        return workflowManager.workflows.first { $0.id == detailWorkflowId }
+        guard let detailWorkflowID else { return nil }
+        return workflowManager.workflows.first { $0.id == detailWorkflowID }
     }
 
     private var workflowSelection: Binding<UUID?> {
         Binding {
-            detailWorkflowId
+            detailWorkflowID
         } set: { newValue in
             guard let newValue else { return }
             selectWorkflowForEditing(newValue)
@@ -495,8 +495,8 @@ struct WorkflowConfigView: View {
     }
 
     private func ensureSelection() {
-        if let selectedWorkflowId = workflowManager.selectedWorkflowId,
-           workflowManager.workflows.contains(where: { $0.id == selectedWorkflowId }) {
+        if let selectedWorkflowID = workflowManager.selectedWorkflowID,
+           workflowManager.workflows.contains(where: { $0.id == selectedWorkflowID }) {
             return
         }
 
@@ -511,18 +511,18 @@ struct WorkflowConfigView: View {
     }
 
     private func activateWorkflowDetail(_ workflowID: UUID) {
-        detailWorkflowId = workflowID
+        detailWorkflowID = workflowID
         workflowManager.selectWorkflow(workflowID)
     }
 
     private func resetNavigationForCurrentSizeClass() {
         guard horizontalSizeClass == .compact else {
-            detailWorkflowId = workflowManager.selectedWorkflowId ?? workflowManager.workflows.first?.id
+            detailWorkflowID = workflowManager.selectedWorkflowID ?? workflowManager.workflows.first?.id
             return
         }
 
         compactPath = []
-        detailWorkflowId = nil
+        detailWorkflowID = nil
         preferredCompactColumn = .sidebar
     }
 
@@ -712,7 +712,7 @@ struct AddNodeSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
-                        .tint(Design.primaryColor)
+                        .tint(AppTheme.primaryColor)
                 }
             }
         }
@@ -1130,7 +1130,7 @@ struct IconPickerView: View {
                                         if isSelected {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .font(.caption)
-                                                .foregroundStyle(.white, Design.primaryColor)
+                                                .foregroundStyle(.white, AppTheme.primaryColor)
                                                 .accessibilityHidden(true)
                                         }
                                     }
@@ -1159,7 +1159,7 @@ struct IconPickerView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
                         .fontWeight(.semibold)
-                        .tint(Design.primaryColor)
+                        .tint(AppTheme.primaryColor)
                 }
             }
         }

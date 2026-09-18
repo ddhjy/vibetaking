@@ -21,7 +21,7 @@ struct OffloadPermissionDialog: View {
                     VStack(spacing: 12) {
                         Image(systemName: iconName)
                             .font(.largeTitle)
-                            .foregroundStyle(Design.primaryColor)
+                            .foregroundStyle(AppTheme.primaryColor)
                             .accessibilityHidden(true)
                         Text("允许 AI 助手访问\(request.displayLabel)？")
                             .font(.title2.bold())
@@ -54,7 +54,7 @@ struct OffloadPermissionDialog: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(20)
-                .frame(maxWidth: Design.readingWidth)
+                .frame(maxWidth: AppTheme.readingWidth)
                 .frame(maxWidth: .infinity)
             }
             .navigationTitle("设备访问")

@@ -63,10 +63,10 @@ final class DemoModeManager {
     }
 
     private func reloadManagers() {
-        TagManager.shared.reload()
+        TagIndex.shared.reload()
         WorkflowManager.shared.reload()
-        SettingsManager.shared.reload()
-        HistoryManager.shared.switchDataset()
+        AISettingsStore.shared.reload()
+        NoteStore.shared.switchDataset()
         SkillStore.shared.resetAndReload()
         AgentSessionStore.shared.resetAndReload()
     }

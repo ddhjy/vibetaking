@@ -45,7 +45,7 @@ class SkillStore {
 
     /// Skills 根目录：记录目录 _skills/（随 iCloud 同步）。
     var skillsDirectory: URL {
-        let dir = HistoryManager.shared.agentStorageRootURL
+        let dir = NoteStore.shared.agentStorageRootURL
             .appendingPathComponent("_skills", isDirectory: true)
         if !FileManager.default.fileExists(atPath: dir.path) {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

@@ -4,7 +4,7 @@
 // Copyright (C) OpenMinis contributors. Licensed under GPL-3.0; see LICENSE.
 // Modifications for vibetaking: removed Codex OAuth / Azure / OpenRouter /
 // DashScope / Chat Completions paths and the provider-config store; init takes
-// explicit (apiKey, modelId, baseURLString) resolved from SettingsManager.
+// explicit (apiKey, modelId, baseURLString) resolved from AISettingsStore.
 
 import Foundation
 

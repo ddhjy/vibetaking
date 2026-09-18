@@ -1,5 +1,5 @@
 // vibetaking 笔记工具集：把速记库暴露给 Agent。
-// 薄封装调用现有 HistoryManager / TagManager。
+// 薄封装调用现有 NoteStore / TagIndex。
 // This file is part of vibetaking, licensed under GPL-3.0 as a combined work
 // with code derived from OpenMinis; see LICENSE.
 
@@ -53,7 +53,7 @@ private let noteDateFormatter: DateFormatter = {
     return formatter
 }()
 
-private func formatItemHeader(_ item: HistoryItem) -> String {
+private func formatNoteHeader(_ item: Note) -> String {
     var header = "[\(item.fileName)] \(noteDateFormatter.string(from: item.createdAt))"
     if !item.tags.isEmpty {
         header += " | 标签: \(item.tags.joined(separator: ", "))"
@@ -88,7 +88,7 @@ struct SearchNotesTool: AgentTool {
             .filter { !$0.isEmpty }
             .map { $0.lowercased() }
 
-        var matches = HistoryManager.shared.savedItems
+        var matches = NoteStore.shared.savedItems
         if !tagFilter.isEmpty {
             matches = matches.filter { item in
                 tagFilter.allSatisfy { filterTag in
@@ -106,7 +106,7 @@ struct SearchNotesTool: AgentTool {
         let total = matches.count
         let selected = Array(matches.prefix(limit))
         guard !selected.isEmpty else {
-            return .success("没有找到匹配的记录（速记库共 \(HistoryManager.shared.savedItems.count) 条）。")
+            return .success("没有找到匹配的记录（速记库共 \(NoteStore.shared.savedItems.count) 条）。")
         }
 
         var lines: [String] = ["共匹配 \(total) 条，显示前 \(selected.count) 条："]
@@ -116,7 +116,7 @@ struct SearchNotesTool: AgentTool {
                 .joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let capped = excerpt.count > 120 ? String(excerpt.prefix(120)) + "…" : excerpt
-            lines.append("\(formatItemHeader(item))\n  \(capped)")
+            lines.append("\(formatNoteHeader(item))\n  \(capped)")
         }
         return .success(lines.joined(separator: "\n"))
     }
@@ -141,10 +141,10 @@ struct ReadNoteTool: AgentTool {
         guard let fileName = ToolArgs.string(args, "file_name") else {
             return .failure("缺少 file_name 参数")
         }
-        guard let item = HistoryManager.shared.savedItems.first(where: { $0.fileName == fileName }) else {
+        guard let item = NoteStore.shared.savedItems.first(where: { $0.fileName == fileName }) else {
             return .failure("没有找到文件名为 \(fileName) 的记录，请先用 search_notes 确认文件名")
         }
-        return .success("\(formatItemHeader(item))\n---\n\(item.text)")
+        return .success("\(formatNoteHeader(item))\n---\n\(item.text)")
     }
 }
 
@@ -169,8 +169,8 @@ struct SaveNoteTool: AgentTool {
             return .failure("缺少 text 参数")
         }
         let tags = ToolArgs.tagList(ToolArgs.string(args, "tags"))
-        HistoryManager.shared.addRecord(text, tags: tags)
-        guard let saved = HistoryManager.shared.savedItems.first(where: { $0.text == text }) else {
+        NoteStore.shared.addRecord(text, tags: tags)
+        guard let saved = NoteStore.shared.savedItems.first(where: { $0.text == text }) else {
             return .failure("保存失败，请重试")
         }
         return .success("已保存为 \(saved.fileName)" + (tags.isEmpty ? "" : "，标签: \(tags.joined(separator: ", "))"))
@@ -201,13 +201,13 @@ struct AddTagsTool: AgentTool {
         guard !tags.isEmpty else {
             return .failure("缺少 tags 参数")
         }
-        guard let item = HistoryManager.shared.savedItems.first(where: { $0.fileName == fileName }) else {
+        guard let item = NoteStore.shared.savedItems.first(where: { $0.fileName == fileName }) else {
             return .failure("没有找到文件名为 \(fileName) 的记录")
         }
         for tag in tags {
-            HistoryManager.shared.addTag(to: item.id, tagName: tag)
+            NoteStore.shared.addTag(to: item.id, tagName: tag)
         }
-        let updated = HistoryManager.shared.savedItems.first(where: { $0.id == item.id })
+        let updated = NoteStore.shared.savedItems.first(where: { $0.id == item.id })
         return .success("已更新标签: \(updated?.tags.joined(separator: ", ") ?? tags.joined(separator: ", "))")
     }
 }
@@ -227,12 +227,12 @@ struct ListTagsTool: AgentTool {
     }
 
     func execute(args: [String: Any]) async -> AgentToolResult {
-        let tagManager = TagManager.shared
-        let tags = tagManager.tags
+        let tagIndex = TagIndex.shared
+        let tags = tagIndex.tags
         guard !tags.isEmpty else {
             return .success("用户还没有任何标签。")
         }
-        let lines = tags.map { "\($0) (\(tagManager.count(for: $0)))" }
+        let lines = tags.map { "\($0) (\(tagIndex.count(for: $0)))" }
         return .success("共 \(tags.count) 个标签：\n" + lines.joined(separator: "\n"))
     }
 }

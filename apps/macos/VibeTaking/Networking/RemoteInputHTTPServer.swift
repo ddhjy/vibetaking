@@ -1,11 +1,11 @@
 import Foundation
 
-final class HTTPServer {
+final class RemoteInputHTTPServer {
     private var listenSocket: Int32 = -1
-    private var running = false
+    private var isRunning = false
     private let queue = DispatchQueue(label: "com.vibetaking.httpserver", attributes: .concurrent)
     var onPasteRequest: ((String) -> Void)?
-    var onSendRequest: (() -> Void)?
+    var onSubmitRequest: (() -> Void)?
 
     func start(port: UInt16) throws {
         listenSocket = socket(AF_INET, SOCK_STREAM, 0)
@@ -36,7 +36,7 @@ final class HTTPServer {
             throw ServerError.listenFailed
         }
 
-        running = true
+        isRunning = true
 
         queue.async { [weak self] in
             self?.acceptLoop()
@@ -44,7 +44,7 @@ final class HTTPServer {
     }
 
     func stop() {
-        running = false
+        isRunning = false
         if listenSocket >= 0 {
             close(listenSocket)
             listenSocket = -1
@@ -52,7 +52,7 @@ final class HTTPServer {
     }
 
     private func acceptLoop() {
-        while running {
+        while isRunning {
             var clientAddr = sockaddr_in()
             var addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
             let clientFd = withUnsafeMutablePointer(to: &clientAddr) { ptr in
@@ -180,7 +180,7 @@ final class HTTPServer {
             sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
 
         case "/send":
-            onSendRequest?()
+            onSubmitRequest?()
             sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
 
         default:

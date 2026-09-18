@@ -120,7 +120,7 @@ apps/macos/
     ├── UI/
     │   └── StatusBarIcon.swift   # 菜单栏图标绘制
     ├── Networking/
-    │   └── HTTPServer.swift      # GCD TCP 服务器（纯 BSD socket）
+    │   └── RemoteInputHTTPServer.swift # 接收文本及提交指令（GCD + BSD socket）
     ├── Services/
     │   └── PasteService.swift    # 粘贴逻辑（纯 CGEvent）
     └── Resources/

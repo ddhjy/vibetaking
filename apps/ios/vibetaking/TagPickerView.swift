@@ -1,10 +1,10 @@
 import SwiftUI
 
 struct TagPickerView: View {
-    let itemId: UUID
+    let noteID: UUID
     
-    @State private var historyManager = HistoryManager.shared
-    @State private var tagManager = TagManager.shared
+    @State private var noteStore = NoteStore.shared
+    @State private var tagIndex = TagIndex.shared
     @Environment(\.dismiss) private var dismiss
     @State private var showCreateTag = false
     @State private var editingTagName: String? = nil
@@ -27,8 +27,8 @@ struct TagPickerView: View {
     @State private var isRecommendingTags = false
     @State private var recommendationMessage: String?
     
-    private var currentItem: HistoryItem? {
-        historyManager.items.first { $0.id == itemId }
+    private var currentNote: Note? {
+        noteStore.items.first { $0.id == noteID }
     }
     
     private var selectedTagCount: Int {
@@ -59,14 +59,14 @@ struct TagPickerView: View {
     }
     
     private func computeInitialSortedTags(recommendedTags: [String] = []) -> [String] {
-        let selectedTagsSet = Set(currentItem?.tags ?? [String]())
+        let selectedTagsSet = Set(currentNote?.tags ?? [String]())
         var recommendationRank: [String: Int] = [:]
         for (index, tag) in recommendedTags.enumerated() {
             if recommendationRank[tag] == nil {
                 recommendationRank[tag] = index
             }
         }
-        let availableTags = Array(Set(tagManager.tags)
+        let availableTags = Array(Set(tagIndex.tags)
             .union(selectedTagsSet)
             .union(initialSelectedTags)
             .union(locallyCreatedTags))
@@ -86,8 +86,8 @@ struct TagPickerView: View {
                 return tag1Rank != nil
             }
 
-            let tag1Count = tagManager.count(for: tag1)
-            let tag2Count = tagManager.count(for: tag2)
+            let tag1Count = tagIndex.count(for: tag1)
+            let tag2Count = tagIndex.count(for: tag2)
             if tag1Count != tag2Count {
                 return tag1Count > tag2Count
             }
@@ -103,19 +103,19 @@ struct TagPickerView: View {
     private func requestRecommendedTagsIfNeeded() {
         guard recommendationTask == nil else { return }
 
-        guard let text = currentItem?.text.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let text = currentNote?.text.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty,
-              !tagManager.tags.isEmpty else {
+              !tagIndex.tags.isEmpty else {
             return
         }
 
-        guard let token = SettingsManager.shared.aiApiToken,
+        guard let token = AISettingsStore.shared.apiKey,
               !token.isEmpty else {
             return
         }
 
-        let availableTags = tagManager.tags
-        let historyExamples = historyManager.tagRecommendationExamples(excluding: itemId)
+        let availableTags = tagIndex.tags
+        let historyExamples = noteStore.tagRecommendationExamples(excluding: noteID)
         isRecommendingTags = true
         recommendationMessage = nil
         recommendationTask = Task {
@@ -201,7 +201,7 @@ struct TagPickerView: View {
             }
             .sheet(item: $editingTagName) { tagName in
                 TagEditSheet(tagName: tagName) { newName in
-                    historyManager.renameTag(from: tagName, to: newName)
+                    noteStore.renameTag(from: tagName, to: newName)
                     if localSelectedTags.remove(tagName) != nil { localSelectedTags.insert(newName) }
                     if initialSelectedTags.remove(tagName) != nil { initialSelectedTags.insert(newName) }
                     if locallyCreatedTags.remove(tagName) != nil { locallyCreatedTags.insert(newName) }
@@ -215,7 +215,7 @@ struct TagPickerView: View {
         .onAppear {
             guard !didInitialize else { return }
             didInitialize = true
-            let currentTags = Set(currentItem?.tags ?? [])
+            let currentTags = Set(currentNote?.tags ?? [])
             initialSelectedTags = currentTags
             localSelectedTags = currentTags
             refreshSortedTags()
@@ -225,10 +225,10 @@ struct TagPickerView: View {
             recommendationTask?.cancel()
             recommendationTask = nil
             for tag in localSelectedTags.subtracting(initialSelectedTags) {
-                historyManager.addTag(to: itemId, tagName: tag)
+                noteStore.addTag(to: noteID, tagName: tag)
             }
             for tag in initialSelectedTags.subtracting(localSelectedTags) {
-                historyManager.removeTag(from: itemId, tagName: tag)
+                noteStore.removeTag(from: noteID, tagName: tag)
             }
             initialSelectedTags = localSelectedTags
         }
@@ -334,7 +334,7 @@ enum TagRowMarker: String, Identifiable {
     var tintColor: Color {
         switch self {
         case .selected:
-            return Design.primaryColor
+            return AppTheme.primaryColor
         case .recent:
             return Color(.systemOrange)
         case .aiRecommended:
@@ -356,7 +356,7 @@ struct TagRowView: View {
             HStack(spacing: 12) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(isSelected ? Design.primaryColor : Color.secondary)
+                    .foregroundStyle(isSelected ? AppTheme.primaryColor : Color.secondary)
                     .accessibilityHidden(true)
 
                 let layout = dynamicTypeSize.isAccessibilitySize
@@ -440,7 +440,7 @@ struct TagEditSheet: View {
                             .accessibilityLabel("标签名称")
                     }
                 } footer: {
-                    Text(TagManager.shared.tags.contains(trimmedName) && trimmedName != tagName
+                    Text(TagIndex.shared.tags.contains(trimmedName) && trimmedName != tagName
                          ? "“\(trimmedName)”已存在。保存后，两组标签将合并，记录正文不变。"
                          : "重命名会更新所有使用此标签的记录。")
                 }
@@ -464,7 +464,7 @@ struct TagEditSheet: View {
     private func saveTag() {
         guard !trimmedName.isEmpty, trimmedName != tagName else { return }
         if let onSave { onSave(trimmedName) }
-        else { HistoryManager.shared.renameTag(from: tagName, to: trimmedName) }
+        else { NoteStore.shared.renameTag(from: tagName, to: trimmedName) }
         dismiss()
     }
 }
@@ -557,14 +557,14 @@ struct TagFilterBar: View {
 
     @Binding var selectedTags: [TagSelection]
     @Binding var isRandomMode: Bool
-    var availableItems: [HistoryItem]
+    var availableItems: [Note]
     var availableTagSet: Set<String> = []
     var level0TagCounts: [String: Int] = [:]
     var level0NoTagCount: Int = 0
     var isSearching: Bool = false
     var onRandomize: () -> Void
     
-    @State private var tagManager = TagManager.shared
+    @State private var tagIndex = TagIndex.shared
     
     private func computeAvailableTagsFromItems() -> Set<String> {
         var tags = Set<String>()
@@ -678,7 +678,7 @@ struct TagFilterBar: View {
         }
     }
     
-    private func matchesSelections(item: HistoryItem, selections: [TagSelection]) -> Bool {
+    private func matchesSelections(item: Note, selections: [TagSelection]) -> Bool {
         for selection in selections {
             if selection.isNoTagSelection {
                 switch selection.state {
@@ -799,7 +799,7 @@ struct FilterChip: View {
             HStack(spacing: 6) {
                 if selectionState == .negative {
                     Image(systemName: "minus.circle")
-                        .foregroundStyle(Design.negativeColor)
+                        .foregroundStyle(AppTheme.negativeColor)
                 }
                 Text(title)
                 if let count {
@@ -814,7 +814,7 @@ struct FilterChip: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(minWidth: 44, minHeight: 44)
-            .background(selectionState == nil ? Color(.tertiarySystemFill) : Design.primaryColor.opacity(0.10), in: Capsule())
+            .background(selectionState == nil ? Color(.tertiarySystemFill) : AppTheme.primaryColor.opacity(0.10), in: Capsule())
             .clipShape(Capsule())
             .contentShape(Capsule())
         }
@@ -841,8 +841,8 @@ struct FilterIconChip: View {
             Image(systemName: systemImage)
                 .font(.body)
                 .frame(minWidth: 44, minHeight: 44)
-                .foregroundStyle(isSelected ? Design.primaryColor : Color.primary)
-                .background(isSelected ? Design.primaryColor.opacity(0.10) : Color(.tertiarySystemFill), in: Capsule())
+                .foregroundStyle(isSelected ? AppTheme.primaryColor : Color.primary)
+                .background(isSelected ? AppTheme.primaryColor.opacity(0.10) : Color(.tertiarySystemFill), in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
@@ -855,8 +855,8 @@ struct BatchTagPickerView: View {
     @State private var didInitialize = false
     let itemIds: Set<UUID>
     
-    @State private var historyManager = HistoryManager.shared
-    @State private var tagManager = TagManager.shared
+    @State private var noteStore = NoteStore.shared
+    @State private var tagIndex = TagIndex.shared
     @Environment(\.dismiss) private var dismiss
     @State private var showCreateTag = false
     @State private var searchText: String = ""
@@ -882,9 +882,9 @@ struct BatchTagPickerView: View {
     }
     
     private func computeTagStates() -> [String: Bool?] {
-        let items = historyManager.items.filter { itemIds.contains($0.id) }
+        let items = noteStore.items.filter { itemIds.contains($0.id) }
         var states: [String: Bool?] = [:]
-        for tag in tagManager.tags {
+        for tag in tagIndex.tags {
             let count = items.filter { $0.tags.contains(tag) }.count
             if count == 0 {
                 states[tag] = false
@@ -898,14 +898,14 @@ struct BatchTagPickerView: View {
     }
     
     private func computeSortedTags() -> [String] {
-        Array(Set(tagManager.tags).union(locallyCreatedTags)).sorted { tag1, tag2 in
+        Array(Set(tagIndex.tags).union(locallyCreatedTags)).sorted { tag1, tag2 in
             let s1 = tagStates[tag1] ?? nil
             let s2 = tagStates[tag2] ?? nil
             let order1 = s1 == true ? 0 : (s1 == nil ? 1 : 2)
             let order2 = s2 == true ? 0 : (s2 == nil ? 1 : 2)
             if order1 != order2 { return order1 < order2 }
-            let count1 = tagManager.count(for: tag1)
-            let count2 = tagManager.count(for: tag2)
+            let count1 = tagIndex.count(for: tag1)
+            let count2 = tagIndex.count(for: tag2)
             if count1 != count2 { return count1 > count2 }
             return tag1.localizedStandardCompare(tag2) == .orderedAscending
         }
@@ -1009,9 +1009,9 @@ struct BatchTagPickerView: View {
             
             switch newState {
             case true:
-                historyManager.batchAddTag(to: itemIds, tagName: tag)
+                noteStore.batchAddTag(to: itemIds, tagName: tag)
             case false:
-                historyManager.batchRemoveTag(from: itemIds, tagName: tag)
+                noteStore.batchRemoveTag(from: itemIds, tagName: tag)
             default:
                 break
             }
@@ -1029,7 +1029,7 @@ struct BatchTagRowView: View {
             HStack(spacing: 12) {
                 Image(systemName: state == true ? "checkmark.circle.fill" : (state == nil ? "minus.circle.fill" : "circle"))
                     .font(.title3)
-                    .foregroundStyle(state == false ? Color.secondary : Design.primaryColor)
+                    .foregroundStyle(state == false ? Color.secondary : AppTheme.primaryColor)
                     .accessibilityHidden(true)
                 Text(tagName).font(.body).foregroundStyle(.primary)
                 Spacer(minLength: 0)
@@ -1046,5 +1046,5 @@ struct BatchTagRowView: View {
 }
 
 #Preview {
-    TagPickerView(itemId: UUID())
+    TagPickerView(noteID: UUID())
 }

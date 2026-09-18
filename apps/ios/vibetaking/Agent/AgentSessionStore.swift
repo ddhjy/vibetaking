@@ -119,7 +119,7 @@ class AgentSessionStore {
     private init() {}
 
     private var sessionsDirectory: URL {
-        let dir = HistoryManager.shared.agentStorageRootURL
+        let dir = NoteStore.shared.agentStorageRootURL
             .appendingPathComponent("_agent", isDirectory: true)
             .appendingPathComponent("sessions", isDirectory: true)
         if !FileManager.default.fileExists(atPath: dir.path) {

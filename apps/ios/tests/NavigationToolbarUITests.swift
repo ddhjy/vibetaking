@@ -41,7 +41,7 @@ final class NavigationToolbarUITests: XCTestCase {
         capture("home-after-assistant-swipe")
     }
 
-    func testToolbarReturnsFromHistory() {
+    func testToolbarReturnsFromNoteLibrary() {
         let initialFrame = homeToolbarFrame()
         app.navigationBars.buttons["记录"].tap()
         XCTAssertTrue(app.navigationBars["记录"].waitForExistence(timeout: 5))

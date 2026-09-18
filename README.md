@@ -36,7 +36,7 @@ docs/        隐私政策、支持说明、演示图（App Store 登记的公开
 
 | 端 | 说明 | 文档 |
 | --- | --- | --- |
-| iOS | 打开即写主页、Workflow、标签、历史、iCloud 同步、AI 处理与 Agent | [apps/ios/README.md](apps/ios/README.md) |
+| iOS | 打开即写主页、工作流、标签、记录库、iCloud 同步、AI 处理与助手 | [apps/ios/README.md](apps/ios/README.md) |
 | macOS | 菜单栏常驻，HTTP 接收文本并模拟按键粘贴到当前活跃输入框 | [apps/macos/README.md](apps/macos/README.md) |
 
 两端原本是独立仓库，macOS 端已连同完整提交历史合并进本仓库，不再单独维护。iOS 的手动 Workflow 可以用 HTTP 发送节点把文本投到 Mac；macOS 端也接受任意来源的 `POST /`（纯文本或 `{"text": "..."}`），方便脚本或 AI 工具直接投递。
@@ -62,6 +62,7 @@ make mac-install       # 构建并覆盖安装到 /Applications
 - [支持](docs/support.md)
 - [App Store 发布清单](apps/ios/docs/app-store-release.md)
 - [macOS 权限说明](apps/macos/docs/permissions.md)
+- [命名规范](docs/naming-conventions.md)
 
 GPL-3.0 License（见 [LICENSE](LICENSE)）。
 

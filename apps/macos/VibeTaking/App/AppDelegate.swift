@@ -131,8 +131,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var port: UInt16 = 7788
     private var launchAtLogin = false
-    private var server: HTTPServer?
-    private var serverRunning = false
+    private var inputServer: RemoteInputHTTPServer?
+    private var isServerRunning = false
     private let bonjourAdvertiser = BonjourAdvertiser()
     private var ipTitleResetWorkItem: DispatchWorkItem?
 
@@ -452,7 +452,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             portItem.title = "接收端口：\(port)"
             refreshSettingsWindow()
 
-            if serverRunning {
+            if isServerRunning {
                 stopServer()
                 startServer()
             }
@@ -706,8 +706,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Server
 
     private func startServer() {
-        guard !serverRunning else { return }
-        let srv = HTTPServer()
+        guard !isServerRunning else { return }
+        let srv = RemoteInputHTTPServer()
         srv.onPasteRequest = { [weak self] text in
             DispatchQueue.main.async {
                 self?.appendHistoryEntry(text: text, reason: .directPaste)
@@ -717,7 +717,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 preserveExistingClipboard: true
             )
         }
-        srv.onSendRequest = {
+        srv.onSubmitRequest = {
             DispatchQueue.main.async {
                 PasteService.send()
             }
@@ -725,8 +725,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             try srv.start(port: port)
-            server = srv
-            serverRunning = true
+            inputServer = srv
+            isServerRunning = true
             updateIcon()
             bonjourAdvertiser.start(port: port)
             print("VibeTaking listening on http://0.0.0.0:\(port)")
@@ -736,11 +736,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopServer() {
-        guard serverRunning else { return }
+        guard isServerRunning else { return }
         bonjourAdvertiser.stop()
-        server?.stop()
-        server = nil
-        serverRunning = false
+        inputServer?.stop()
+        inputServer = nil
+        isServerRunning = false
         updateIcon()
     }
 }

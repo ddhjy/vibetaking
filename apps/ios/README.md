@@ -13,7 +13,7 @@
 - **记录**：进入主页自动聚焦全屏输入框；草稿实时写入 `_draft.md`，退出或切走应用不丢；清空后可一键恢复。
 - **Workflow**：把 AI 处理、复制、HTTP 发送、保存记录组合成一键触发的流水线。
 - **标签**：为草稿和历史记录打标；基于候选标签、历史打标样例、文本相似度和时间衰减做 AI 推荐。
-- **历史**：全文搜索、多标签筛选、随机浏览（工具栏按钮或摇一摇）、批量复制、批量打标、统计、导入导出。
+- **记录库**：全文搜索、多标签筛选、随机浏览（工具栏按钮或摇一摇）、批量复制、批量打标、统计、导入导出。
 - **配置迁移**：AI 配置与 Workflow 可导出为 JSON，在另一台设备导入覆盖。
 
 ## Workflow
@@ -108,19 +108,20 @@ App Store 发布流程见 [docs/app-store-release.md](docs/app-store-release.md)
 
 | 路径 | 职责 |
 | --- | --- |
-| `vibetaking/VibetakingApp.swift` | App 入口 |
-| `vibetaking/ContentView.swift` | 打开即写主页、底部工具栏、Workflow 触发、`UITextView` 桥接输入 |
+| `vibetaking/VibeTakingApp.swift` | App 入口 |
+| `vibetaking/QuickCaptureView.swift` | 打开即写主页、底部工具栏、工作流触发、`UITextView` 桥接输入 |
 | `vibetaking/WorkflowManager.swift` | Workflow 数据模型、持久化与迁移、手动流水线执行 |
 | `vibetaking/WorkflowConfigView.swift` | Workflow 列表、节点编辑和图标选择 |
 | `vibetaking/AIService.swift` | 模型列表、AI 文本处理、AI 标签推荐（含历史样例筛选） |
-| `vibetaking/HistoryManager.swift` | 草稿与历史记录的 Markdown 读写、导入导出；内含 `TagManager` 与手写 ZIP 解析器 |
-| `vibetaking/HistoryView.swift` | 历史列表、搜索、筛选、随机浏览、批量操作、统计 |
+| `vibetaking/NoteStore.swift` | 草稿与记录的状态、Markdown 读写、导入导出；内含 `Note`、`TagIndex` 与 ZIP 解析器 |
+| `vibetaking/NoteSnapshotStore.swift` | 记录快照缓存，沿用已有磁盘文件及编码格式 |
+| `vibetaking/NoteLibraryView.swift` | 记录列表、搜索、筛选、随机浏览、批量操作、统计 |
 | `vibetaking/TagPickerView.swift` | 标签选择、创建、重命名、AI 推荐展示、批量打标 |
-| `vibetaking/SettingsView.swift` | AI 设置、模型刷新、配置导入导出、隐藏演示模式与 FLEX 入口；内含 `SettingsManager` |
+| `vibetaking/SettingsView.swift` | AI 设置、模型刷新、配置导入导出、隐藏演示模式与 FLEX 入口；内含 `AISettingsStore` |
 | `vibetaking/DemoMode/` | 演示模式开关、独立配置组路由、示例数据播种 |
-| `vibetaking/AppConfigurationManager.swift` | 配置包 JSON 的编码、解码与应用 |
-| `vibetaking/KeychainHelper.swift` | Keychain 读写封装 |
-| `vibetaking/Design.swift` | 全局颜色定义 |
+| `vibetaking/AppConfigurationTransfer.swift` | 配置包 JSON 的导入、导出与应用，兼容既有字段名 |
+| `vibetaking/KeychainStore.swift` | Keychain 读写封装 |
+| `vibetaking/AppTheme.swift` | 应用颜色、字体、尺寸与外观相关实现 |
 | `vibetaking/AppToolbarIdentity.swift` | 顶栏“更多”按钮的共享标识与加载态 label |
 | `vibetaking/DebugView.swift` | 隐藏调试页，可打开 FLEX |
 | `vibetaking/InAppDebugger.swift` | Debug 构建下唤起 FLEX 的封装 |

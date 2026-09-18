@@ -11,14 +11,24 @@ struct AppConfigurationPackage: Codable {
 }
 
 struct AppAIConfiguration: Codable, Equatable {
-    var apiToken: String?
+    var apiKey: String?
     var baseURLString: String
     var modelID: String
+
+    enum CodingKeys: String, CodingKey {
+        case apiKey = "apiToken"
+        case baseURLString, modelID
+    }
 }
 
 struct AppWorkflowConfiguration: Codable, Equatable {
-    var selectedWorkflowId: UUID?
+    var selectedWorkflowID: UUID?
     var items: [Workflow]
+
+    enum CodingKeys: String, CodingKey {
+        case selectedWorkflowID = "selectedWorkflowId"
+        case items
+    }
 }
 
 enum AppConfigurationImportError: LocalizedError {
@@ -45,7 +55,7 @@ enum AppConfigurationImportError: LocalizedError {
 }
 
 @MainActor
-enum AppConfigurationManager {
+enum AppConfigurationTransfer {
     private static let maxImportFileSize = 5 * 1024 * 1024
 
     static func exportConfiguration() throws -> URL {
@@ -53,7 +63,7 @@ enum AppConfigurationManager {
             schemaVersion: AppConfigurationPackage.currentSchemaVersion,
             exportedAt: Date.now,
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-            ai: SettingsManager.shared.exportConfiguration(),
+            ai: AISettingsStore.shared.exportConfiguration(),
             workflows: WorkflowManager.shared.exportConfiguration()
         )
 
@@ -112,7 +122,7 @@ enum AppConfigurationManager {
     }
 
     private static func apply(_ package: AppConfigurationPackage) throws {
-        SettingsManager.shared.applyConfiguration(package.ai)
+        AISettingsStore.shared.applyConfiguration(package.ai)
         try WorkflowManager.shared.applyConfiguration(package.workflows)
     }
 

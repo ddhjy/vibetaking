@@ -6,7 +6,7 @@
 
 ## 颜色和材质
 
-- 普通按钮、导航和菜单图标使用 `Design.controlColor`（`UIColor.label`），浅色模式为黑色，深色模式随系统适配。
+- 普通按钮、导航和菜单图标使用 `AppTheme.controlColor`（`UIColor.label`），浅色模式为黑色，深色模式随系统适配。
 - 强调色：`UIColor.systemIndigo`，仅用于标签、选中状态等需要强调的信息，不作为全局控件 tint。
 - 专注模式工作流按钮沿用黑底白字，包括降低透明度时的不透明背景。
 - 编辑和会话背景：`systemBackground`；列表：`systemGroupedBackground`、`secondarySystemGroupedBackground`。
