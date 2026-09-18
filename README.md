@@ -6,9 +6,9 @@
 
 iOS 版已上架 App Store，可直接安装：
 
-[![Download on the App Store](https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/zh-cn?size=250x83)](https://apps.apple.com/app/id6778762693)
+[![Download on the App Store](https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/zh-cn?size=250x83)](https://apps.apple.com/cn/app/id6778762693)
 
-或打开链接：[随心记 - 打开即写](https://apps.apple.com/app/id6778762693)
+或打开链接：[随心记 - 打开即写](https://apps.apple.com/cn/app/id6778762693)
 
 ![应用演示](docs/demo.png)
 
@@ -57,7 +57,7 @@ make mac-install       # 构建并覆盖安装到 /Applications
 
 ## 文档与许可证
 
-- [App Store 下载](https://apps.apple.com/app/id6778762693)
+- [App Store 下载](https://apps.apple.com/cn/app/id6778762693)
 - [隐私政策](docs/privacy-policy.md)
 - [支持](docs/support.md)
 - [App Store 发布清单](apps/ios/docs/app-store-release.md)
