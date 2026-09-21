@@ -5,6 +5,8 @@ import Observation
 enum VibetakingBonjour {
     static let serviceType = "_vibetaking._tcp"
     static let domain = "local."
+    /// Mac 接收端的出厂监听端口（apps/macos 的 AppDelegate.port）。手动填写地址时的预填与兜底值。
+    static let defaultPort = 7788
 }
 
 struct DiscoveredDevice: Identifiable, Hashable {

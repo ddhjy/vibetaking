@@ -133,11 +133,13 @@ class TagIndex {
         let counts: [String: Int]
     }
 
+    /// 只统计已保存且内容已就绪的记录。草稿和下载中的占位记录不计入，
+    /// 调用方传入哪个数组都得到同一结果。
     nonisolated static func snapshot(from items: [Note]) -> Snapshot {
         var uniqueTags = Set<String>()
         var counts: [String: Int] = [:]
 
-        for item in items {
+        for item in items where !item.isDraft && !item.isDownloading {
             for tag in item.tags {
                 uniqueTags.insert(tag)
                 counts[tag, default: 0] += 1
@@ -313,13 +315,13 @@ class NoteStore {
         lastClearedText = draft.text
         lastClearedTags = draft.tags
         
-        let now = Date.now
-        let fileName = generateFileName(for: now)
+        let createdAt = availableCreationDate(startingAt: .now)
+        let fileName = generateFileName(for: createdAt)
         let finalItem = Note(
             id: draft.id,
             fileName: fileName,
             text: draft.text,
-            createdAt: now,
+            createdAt: createdAt,
             description: String(draft.text.prefix(50)),
             tags: draft.tags,
             isDraft: false
@@ -463,6 +465,22 @@ class NoteStore {
     
     private func generateFileName(for date: Date) -> String {
         return dateFormatter.string(from: date) + ".md"
+    }
+
+    /// 文件名精确到秒。同一秒内已有记录（内存、磁盘或 iCloud 占位符）时顺延，
+    /// 避免后写的记录覆盖先写的文件。
+    private func availableCreationDate(startingAt date: Date) -> Date {
+        let takenNames = Set(items.map(\.fileName))
+        let directory = storageURL
+        var candidate = date
+        while true {
+            let fileName = generateFileName(for: candidate)
+            let isTaken = takenNames.contains(fileName)
+                || fileManager.fileExists(atPath: directory.appendingPathComponent(fileName).path)
+                || fileManager.fileExists(atPath: directory.appendingPathComponent("." + fileName + ".icloud").path)
+            if !isTaken { return candidate }
+            candidate = candidate.addingTimeInterval(1)
+        }
     }
     
     private func parseDate(from fileName: String) -> Date? {
@@ -752,7 +770,7 @@ class NoteStore {
         }
 
         let sortedItems = itemsByFileName.values.sorted { $0.createdAt > $1.createdAt }
-        let tagSnapshot = TagIndex.snapshot(from: sortedItems.filter { !$0.isDownloading })
+        let tagSnapshot = TagIndex.snapshot(from: sortedItems)
 
         return DiskLoadResult(
             storage: resolution,
@@ -929,15 +947,13 @@ class NoteStore {
         return content
     }
     
-    func addRecord(_ text: String, tags: [String] = []) {
-        guard !text.isEmpty else { return }
+    /// 新增一条记录并返回它；写盘失败返回 nil。不按正文去重，相同正文会得到两条记录。
+    @discardableResult
+    func addRecord(_ text: String, tags: [String] = []) -> Note? {
+        guard !text.isEmpty else { return nil }
         let documentsURL = storageURL
         
-        if let existingItem = items.first(where: { $0.text == text }) {
-            deleteRecord(existingItem)
-        }
-        
-        let now = Date.now
+        let now = availableCreationDate(startingAt: .now)
         let fileName = generateFileName(for: now)
         let description = String(text.prefix(50))
         let content = generateMarkdownContent(text: text, description: description, tags: tags, createdAt: now)
@@ -956,17 +972,18 @@ class NoteStore {
             )
             items.insert(newItem, at: 0)
             updateNoteCache(for: newItem, at: fileURL)
-            TagIndex.shared.refreshTags(from: items)
-            
+            TagIndex.shared.refreshTags(from: savedItems)
+            return newItem
         } catch {
             print("Failed to write record to iCloud: \(error)")
+            return nil
         }
     }
     
     func deleteRecord(_ item: Note) {
         removeFiles(for: item)
         items.removeAll { $0.id == item.id }
-        TagIndex.shared.refreshTags(from: items)
+        TagIndex.shared.refreshTags(from: savedItems)
     }
     
     func deleteRecords(at offsets: IndexSet) {
@@ -974,7 +991,7 @@ class NoteStore {
             removeFiles(for: items[index])
         }
         items.remove(atOffsets: offsets)
-        TagIndex.shared.refreshTags(from: items)
+        TagIndex.shared.refreshTags(from: savedItems)
     }
     
     func deleteRecords(ids: Set<UUID>) {
@@ -986,7 +1003,7 @@ class NoteStore {
         
         items.removeAll { ids.contains($0.id) }
         
-        TagIndex.shared.refreshTags(from: items)
+        TagIndex.shared.refreshTags(from: savedItems)
     }
     
     func clearAll() {
@@ -994,7 +1011,7 @@ class NoteStore {
             removeFiles(for: item)
         }
         items.removeAll()
-        TagIndex.shared.refreshTags(from: items)
+        TagIndex.shared.refreshTags(from: savedItems)
     }
 
     private func removeFiles(for item: Note) {

@@ -87,34 +87,6 @@ struct NoteLibraryView: View {
         var searchNoTagCount: Int = 0
         var searchTagSet: Set<String> = []
         
-        private static func tokenize(_ searchText: String) -> [String] {
-            let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed
-                .split(whereSeparator: { $0.isWhitespace })
-                .map(String.init)
-        }
-        
-        private static func matchesSelections(item: Note, selections: [TagSelection]) -> Bool {
-            for selection in selections {
-                if selection.isNoTagSelection {
-                    switch selection.state {
-                    case .positive:
-                        if !item.tags.isEmpty { return false }
-                    case .negative:
-                        if item.tags.isEmpty { return false }
-                    }
-                } else {
-                    switch selection.state {
-                    case .positive:
-                        if !item.tags.contains(selection.tag) { return false }
-                    case .negative:
-                        if item.tags.contains(selection.tag) { return false }
-                    }
-                }
-            }
-            return true
-        }
-        
         static func build(
             items: [Note],
             searchText: String,
@@ -124,16 +96,12 @@ struct NoteLibraryView: View {
             let savedItems = items.filter { !$0.isDraft }
             
             let searchFilteredItems: [Note]
-            let tokens = tokenize(searchText)
-            if tokens.isEmpty {
+            let keywords = NoteSearch.keywords(from: searchText)
+            if keywords.isEmpty {
                 searchFilteredItems = savedItems
             } else {
                 searchFilteredItems = savedItems.filter { item in
-                    tokens.allSatisfy { token in
-                        let textMatch = item.text.localizedStandardContains(token)
-                        let tagMatch = item.tags.contains { $0.localizedStandardContains(token) }
-                        return textMatch || tagMatch
-                    }
+                    NoteSearch.matches(text: item.text, tags: item.tags, keywords: keywords)
                 }
             }
             
@@ -142,7 +110,7 @@ struct NoteLibraryView: View {
                 filteredItems = searchFilteredItems
             } else {
                 filteredItems = searchFilteredItems.filter { item in
-                    matchesSelections(item: item, selections: selectedTags)
+                    selectedTags.allMatch(tags: item.tags)
                 }
             }
             
@@ -220,27 +188,6 @@ struct NoteLibraryView: View {
         }
     }
 
-    private func matchesSelections(item: Note, selections: [TagSelection]) -> Bool {
-        for selection in selections {
-            if selection.isNoTagSelection {
-                switch selection.state {
-                case .positive:
-                    if !item.tags.isEmpty { return false }
-                case .negative:
-                    if item.tags.isEmpty { return false }
-                }
-            } else {
-                switch selection.state {
-                case .positive:
-                    if !item.tags.contains(selection.tag) { return false }
-                case .negative:
-                    if item.tags.contains(selection.tag) { return false }
-                }
-            }
-        }
-        return true
-    }
-
     private func applyListProjectionImmediately() {
         let baseItems = listCache.searchFilteredItems
         let filteredItems: [Note]
@@ -249,7 +196,7 @@ struct NoteLibraryView: View {
             filteredItems = baseItems
         } else {
             filteredItems = baseItems.filter { item in
-                matchesSelections(item: item, selections: selectedTags)
+                selectedTags.allMatch(tags: item.tags)
             }
         }
 

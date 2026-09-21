@@ -324,7 +324,6 @@ enum DemoSeedData {
                 id: polishWorkflowID,
                 name: "润色文案",
                 icon: "sparkles",
-                kind: .manual,
                 isOpen: true,
                 nodes: [
                     WorkflowNode(
@@ -340,7 +339,6 @@ enum DemoSeedData {
                 id: inboxWorkflowID,
                 name: "整理待办",
                 icon: "checklist",
-                kind: .manual,
                 isOpen: true,
                 nodes: [
                     WorkflowNode(
@@ -355,7 +353,6 @@ enum DemoSeedData {
                 id: archiveWorkflowID,
                 name: "摘要归档",
                 icon: "text.badge.star",
-                kind: .manual,
                 isOpen: false,
                 nodes: [
                     WorkflowNode(
@@ -371,7 +368,6 @@ enum DemoSeedData {
                 id: saveWorkflowID,
                 name: "快速保存",
                 icon: "square.and.arrow.down",
-                kind: .manual,
                 isOpen: false,
                 nodes: [
                     WorkflowNode(type: .save)
@@ -381,15 +377,13 @@ enum DemoSeedData {
                 id: macWorkflowID,
                 name: "发到 Mac",
                 icon: "laptopcomputer",
-                kind: .manual,
                 isOpen: false,
-                syncConfig: Workflow.SyncConfig(host: "localhost", port: 7788),
                 nodes: [
                     WorkflowNode(
                         type: .httpPost,
                         config: WorkflowNode.NodeConfig(
                             httpHost: "localhost",
-                            httpPort: 7788
+                            httpPort: VibetakingBonjour.defaultPort
                         )
                     )
                 ]

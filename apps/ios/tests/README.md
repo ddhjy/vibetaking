@@ -36,7 +36,29 @@
 字段的解码、回写，以及旧版解码器和缺省可选字段的兼容性。
 
 Workflow 和两个共享状态对象使用测试替身；不读取真实密钥、不访问网络，
-也不验证完整工作流编码、配置应用、Keychain 或 iCloud。相关场景仍需独立回归。
+也不验证配置应用、Keychain 或 iCloud。工作流本身的编码由下一节覆盖。
+
+## 工作流存储与导出兼容性
+
+```sh
+./apps/ios/tests/run-workflow-compatibility-checks.sh
+```
+
+直接编译生产代码 `Workflow.swift`，无需替身。覆盖 UserDefaults 中的 `workflows_v2` 和配置导出包里的工作流数组。
+
+14 项检查：上一版写入的数据（带 `kind`、`isActive`、`syncConfig`）可读；数据里残留一条 Auto Paste 工作流时整个数组仍能解码，且该条被标记、交给加载流程丢弃；只有 `id` 和 `name` 的最早格式取默认值；已移除的三个字段不再写出；往返无损；按上一版解码器重读当前输出仍然成功；显式保存过的端口不会被改写；以及三条配置校验规则。
+
+不验证 `WorkflowManager` 的加载、去除旧工作流后的保存和导入流程，这些依赖应用状态，仍需在应用内回归。
+
+## 记录搜索与标签筛选语义
+
+```sh
+./apps/ios/tests/run-note-search-checks.sh
+```
+
+直接编译生产代码 `NoteSearch.swift`。记录页、标签筛选栏和 AI 助手的 `search_notes` 共用这一份实现。
+
+15 项检查：关键词按空白切分且为 AND、可命中正文或标签、标签按子串匹配、忽略大小写与变音符号；标签筛选的正选、反选、整词比较、「无标签」及其反选、多条件 AND 与空条件。全角拉丁字母与半角不互通是 `localizedStandardContains` 的现状，检查里不固定这一点。
 
 ## 首页浮动工具栏导航回归
 

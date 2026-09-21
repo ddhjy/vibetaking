@@ -480,7 +480,7 @@ struct WorkflowConfigView: View {
 
     private func addWorkflow() {
         let count = workflowManager.workflows.count + 1
-        let workflow = Workflow(name: "工作流 \(count)", kind: .manual)
+        let workflow = Workflow(name: "工作流 \(count)")
         workflowManager.addWorkflow(workflow)
         selectWorkflowForEditing(workflow.id)
         if horizontalSizeClass == .compact {
@@ -670,7 +670,7 @@ struct NodeRowView: View {
                 return serviceName
             }
             let host = node.config.httpHost ?? "localhost"
-            let port = node.config.httpPort ?? 9999
+            let port = node.config.httpPort ?? VibetakingBonjour.defaultPort
             return "\(host):\(port)"
         }
 
@@ -830,7 +830,7 @@ struct EditNodeSheet: View {
                             }
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("端口").font(.subheadline).foregroundStyle(.secondary)
-                                TextField("9999", text: $httpPort)
+                                TextField(String(VibetakingBonjour.defaultPort), text: $httpPort)
                                     .keyboardType(.numberPad)
                                     .accessibilityLabel("端口")
                             }
@@ -865,7 +865,7 @@ struct EditNodeSheet: View {
                 aiPrompt = node.config.aiPrompt ?? ""
                 agentPrompt = node.config.agentPrompt ?? ""
                 httpHost = node.config.httpHost ?? "localhost"
-                httpPort = "\(node.config.httpPort ?? 9999)"
+                httpPort = "\(node.config.httpPort ?? VibetakingBonjour.defaultPort)"
                 boundServiceName = node.config.httpServiceName
             }
         }

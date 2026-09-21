@@ -58,7 +58,7 @@ struct QuickCaptureView: View {
 
     private var focusedWorkflow: Workflow? {
         guard let id = UUID(uuidString: focusedWorkflowIDRaw) else { return nil }
-        return workflowManager.openWorkflows.first { $0.id == id && $0.kind == .manual }
+        return workflowManager.openWorkflows.first { $0.id == id }
     }
 
     private var isFocusMode: Bool { focusedWorkflow != nil }
@@ -573,7 +573,7 @@ struct QuickCaptureView: View {
     }
 
     private func enterFocusMode(_ workflow: Workflow, fromLongPress: Bool = false) {
-        guard workflow.kind == .manual, processingWorkflowID == nil else { return }
+        guard processingWorkflowID == nil else { return }
         suppressNextWorkflowTap = fromLongPress
         focusedWorkflowIDRaw = workflow.id.uuidString
     }

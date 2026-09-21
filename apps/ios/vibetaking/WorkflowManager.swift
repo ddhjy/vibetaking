@@ -1,150 +1,6 @@
 import Foundation
 import SwiftUI
 
-enum WorkflowKind: String, Codable, Equatable {
-    case manual
-    /// 旧版 Auto Paste 开关型 Workflow，加载时丢弃，不再创建。
-    case autoPasteSync
-}
-
-enum WorkflowNodeType: String, Codable, CaseIterable {
-    case aiProcess = "ai_process"
-    case agentProcess = "agent"
-    case copyToClipboard = "copy"
-    case save = "save"
-    case httpPost = "http_post"
-    
-    var displayName: String {
-        switch self {
-        case .aiProcess: "AI 改写"
-        case .agentProcess: "AI 助手"
-        case .copyToClipboard: "复制文本"
-        case .save: "保存记录"
-        case .httpPost: "发送到 Mac 或网址"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .aiProcess: "sparkles"
-        case .agentProcess: "brain.head.profile"
-        case .copyToClipboard: "doc.on.doc"
-        case .save: "square.and.arrow.down"
-        case .httpPost: "paperplane.circle"
-        }
-    }
-}
-
-
-struct WorkflowNode: Identifiable, Codable, Equatable {
-    let id: UUID
-    var type: WorkflowNodeType
-    var isEnabled: Bool
-    var config: NodeConfig
-    
-    struct NodeConfig: Codable, Equatable {
-        var aiPrompt: String?
-        /// Agent 节点的任务指令（可用全部工具的多轮处理）。
-        var agentPrompt: String?
-        var httpHost: String?
-        var httpPort: Int?
-        var httpServiceName: String?
-    }
-    
-    init(id: UUID = UUID(), type: WorkflowNodeType, isEnabled: Bool = true, config: NodeConfig = NodeConfig()) {
-        self.id = id
-        self.type = type
-        self.isEnabled = isEnabled
-        self.config = config
-    }
-    
-    static func defaultNodes() -> [WorkflowNode] {
-        []
-    }
-}
-
-
-struct Workflow: Identifiable, Codable, Equatable {
-    let id: UUID
-    var name: String
-    var icon: String
-    var kind: WorkflowKind
-    var isOpen: Bool
-    var isActive: Bool
-    var syncConfig: SyncConfig
-    var nodes: [WorkflowNode]
-
-    /// Validate before consuming the draft so an unfinished workflow cannot discard input.
-    var configurationIssue: String? {
-        let enabledNodes = nodes.filter(\.isEnabled)
-        guard !enabledNodes.isEmpty else {
-            return "还没有启用的步骤。请添加并启用至少一个步骤，再运行。"
-        }
-        for node in enabledNodes {
-            let prompt: String?
-            switch node.type {
-            case .aiProcess: prompt = node.config.aiPrompt
-            case .agentProcess: prompt = node.config.agentPrompt
-            default: continue
-            }
-            if prompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
-                return "请先填写“\(node.type.displayName)”步骤的指令。草稿已保留。"
-            }
-        }
-        return nil
-    }
-
-    struct SyncConfig: Codable, Equatable {
-        var host: String
-        var port: Int
-        var serviceName: String?
-
-        init(host: String = "", port: Int = 7788, serviceName: String? = nil) {
-            self.host = host
-            self.port = port
-            self.serviceName = serviceName
-        }
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case id, name, icon, kind, isOpen, isActive, syncConfig, nodes
-    }
-
-    init(
-        id: UUID = UUID(),
-        name: String = "默认工作流",
-        icon: String = "arrow.triangle.branch",
-        kind: WorkflowKind = .manual,
-        isOpen: Bool = true,
-        isActive: Bool = false,
-        syncConfig: SyncConfig = SyncConfig(),
-        nodes: [WorkflowNode] = WorkflowNode.defaultNodes()
-    ) {
-        self.id = id
-        self.name = name
-        self.icon = icon
-        self.kind = kind
-        self.isOpen = isOpen
-        self.isActive = isActive
-        self.syncConfig = syncConfig
-        self.nodes = nodes
-    }
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-        icon = try container.decodeIfPresent(String.self, forKey: .icon) ?? "arrow.triangle.branch"
-        kind = try container.decodeIfPresent(WorkflowKind.self, forKey: .kind) ?? .manual
-        isOpen = try container.decodeIfPresent(Bool.self, forKey: .isOpen) ?? false
-        isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive) ?? false
-        syncConfig = try container.decodeIfPresent(SyncConfig.self, forKey: .syncConfig) ?? SyncConfig()
-        nodes = try container.decodeIfPresent([WorkflowNode].self, forKey: .nodes) ?? []
-    }
-
-}
-
-
 struct WorkflowExecutionResult: Identifiable {
     let id = UUID()
     let finalText: String
@@ -195,7 +51,6 @@ class WorkflowManager {
     var nodes: [WorkflowNode] {
         get { selectedWorkflow.nodes }
         set {
-            guard selectedWorkflow.kind == .manual else { return }
             guard let idx = workflows.firstIndex(where: { $0.id == selectedWorkflow.id }) else { return }
             workflows[idx].nodes = newValue
             saveWorkflows()
@@ -227,7 +82,6 @@ class WorkflowManager {
     
     func addWorkflow(_ workflow: Workflow) {
         var wf = workflow
-        guard wf.kind == .manual else { return }
         normalizeNodes(&wf.nodes)
         workflows.append(wf)
         if selectedWorkflowID == nil {
@@ -262,7 +116,6 @@ class WorkflowManager {
         let copy = Workflow(
             name: source.name + " 副本",
             icon: source.icon,
-            kind: .manual,
             isOpen: source.isOpen,
             nodes: source.nodes
         )
@@ -272,14 +125,12 @@ class WorkflowManager {
     }
 
     func addNode(_ node: WorkflowNode) {
-        guard selectedWorkflow.kind == .manual else { return }
         guard let idx = workflows.firstIndex(where: { $0.id == selectedWorkflow.id }) else { return }
         workflows[idx].nodes.append(node)
         saveWorkflows()
     }
 
     func updateNode(_ node: WorkflowNode) {
-        guard selectedWorkflow.kind == .manual else { return }
         guard let wIdx = workflows.firstIndex(where: { $0.id == selectedWorkflow.id }),
               let nIdx = workflows[wIdx].nodes.firstIndex(where: { $0.id == node.id }) else { return }
         workflows[wIdx].nodes[nIdx] = node
@@ -287,14 +138,12 @@ class WorkflowManager {
     }
 
     func moveNode(from source: IndexSet, to destination: Int) {
-        guard selectedWorkflow.kind == .manual else { return }
         guard let idx = workflows.firstIndex(where: { $0.id == selectedWorkflow.id }) else { return }
         workflows[idx].nodes.move(fromOffsets: source, toOffset: destination)
         saveWorkflows()
     }
 
     func deleteNodes(at offsets: IndexSet) {
-        guard selectedWorkflow.kind == .manual else { return }
         guard let idx = workflows.firstIndex(where: { $0.id == selectedWorkflow.id }) else { return }
         workflows[idx].nodes.remove(atOffsets: offsets)
         saveWorkflows()
@@ -413,14 +262,6 @@ class WorkflowManager {
             )
         }
 
-        guard workflow.kind == .manual else {
-            throw NSError(
-                domain: "WorkflowManager",
-                code: -3,
-                userInfo: [NSLocalizedDescriptionKey: "这个旧版工作流已不再支持。请在工作流设置中新建工作流。"]
-            )
-        }
-        
         if let issue = workflow.configurationIssue {
             throw NSError(domain: "WorkflowManager", code: -4,
                           userInfo: [NSLocalizedDescriptionKey: issue])
@@ -499,10 +340,6 @@ class WorkflowManager {
             )
         }
 
-        guard workflow.kind == .manual else {
-            return false
-        }
-
         let httpNodes = workflow.nodes.filter { $0.isEnabled && $0.type == .httpPost }
         guard !httpNodes.isEmpty else { return false }
 
@@ -524,7 +361,7 @@ class WorkflowManager {
 
     private func resolveHTTPNodeTarget(_ config: WorkflowNode.NodeConfig) async -> (host: String, port: Int) {
         let cachedHost = config.httpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let cachedPort = config.httpPort ?? 9999
+        let cachedPort = config.httpPort ?? VibetakingBonjour.defaultPort
 
         if let serviceName = config.httpServiceName, !serviceName.isEmpty {
             if let resolved = await BonjourResolver.resolve(serviceName: serviceName),
@@ -608,7 +445,7 @@ class WorkflowManager {
         defaults.removeObject(forKey: legacyAutoPasteHostKey)
         defaults.removeObject(forKey: legacyAutoPastePortKey)
 
-        workflows.removeAll { $0.kind == .autoPasteSync }
+        workflows.removeAll(where: \.isUnsupportedKind)
         if workflows.isEmpty {
             workflows = [Workflow()]
         }

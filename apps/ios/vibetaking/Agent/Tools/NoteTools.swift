@@ -83,10 +83,7 @@ struct SearchNotesTool: AgentTool {
         let tagFilter = ToolArgs.tagList(ToolArgs.string(args, "tags"))
         let limit = min(max(ToolArgs.int(args, "limit") ?? 10, 1), 50)
 
-        let keywords = query
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .map { $0.lowercased() }
+        let keywords = NoteSearch.keywords(from: query)
 
         var matches = NoteStore.shared.savedItems
         if !tagFilter.isEmpty {
@@ -97,9 +94,9 @@ struct SearchNotesTool: AgentTool {
             }
         }
         if !keywords.isEmpty {
+            // 与记录页搜索同一套语义，助手和用户看到的结果一致。
             matches = matches.filter { item in
-                let haystack = (item.text + " " + item.tags.joined(separator: " ")).lowercased()
-                return keywords.allSatisfy { haystack.contains($0) }
+                NoteSearch.matches(text: item.text, tags: item.tags, keywords: keywords)
             }
         }
 
@@ -154,7 +151,7 @@ struct SaveNoteTool: AgentTool {
     var definition: AgentToolDefinition {
         AgentToolDefinition(
             name: "save_note",
-            description: "把文本保存为一条新的速记记录，可同时打标签。用于帮用户整理、归纳后落盘新记录。相同正文的旧记录会被替换。",
+            description: "把文本保存为一条新的速记记录，可同时打标签。用于帮用户整理、归纳后落盘新记录。每次调用都会新增一条，不会替换已有记录。",
             parameters: [
                 "text": AgentToolParam(type: .string, description: "记录正文（Markdown 纯文本）"),
                 "tags": AgentToolParam(type: .string, description: "标签，逗号分隔。优先复用 list_tags 中已有的标签。可为空。"),
@@ -169,8 +166,7 @@ struct SaveNoteTool: AgentTool {
             return .failure("缺少 text 参数")
         }
         let tags = ToolArgs.tagList(ToolArgs.string(args, "tags"))
-        NoteStore.shared.addRecord(text, tags: tags)
-        guard let saved = NoteStore.shared.savedItems.first(where: { $0.text == text }) else {
+        guard let saved = NoteStore.shared.addRecord(text, tags: tags) else {
             return .failure("保存失败，请重试")
         }
         return .success("已保存为 \(saved.fileName)" + (tags.isEmpty ? "" : "，标签: \(tags.joined(separator: ", "))"))

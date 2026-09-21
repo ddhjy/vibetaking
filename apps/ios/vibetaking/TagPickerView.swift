@@ -533,22 +533,6 @@ struct TagBadgeView: View {
     }
 }
 
-nonisolated enum TagSelectionState: Equatable, Sendable {
-    case positive
-    case negative
-}
-
-nonisolated struct TagSelection: Equatable, Sendable {
-    var tag: String
-    var state: TagSelectionState
-    
-    static let noTagIdentifier = "__NO_TAG__"
-    
-    var isNoTagSelection: Bool {
-        tag == Self.noTagIdentifier
-    }
-}
-
 struct TagFilterBar: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -660,7 +644,7 @@ struct TagFilterBar: View {
             return availableItems.count
         }
         return availableItems.reduce(into: 0) { count, item in
-            if matchesSelections(item: item, selections: currentSelections) {
+            if currentSelections.allMatch(tags: item.tags) {
                 count += 1
             }
         }
@@ -672,32 +656,12 @@ struct TagFilterBar: View {
             return level0NoTagCount
         }
         return availableItems.reduce(into: 0) { count, item in
-            if item.tags.isEmpty && matchesSelections(item: item, selections: currentSelections) {
+            if item.tags.isEmpty && currentSelections.allMatch(tags: item.tags) {
                 count += 1
             }
         }
     }
     
-    private func matchesSelections(item: Note, selections: [TagSelection]) -> Bool {
-        for selection in selections {
-            if selection.isNoTagSelection {
-                switch selection.state {
-                case .positive:
-                    if !item.tags.isEmpty { return false }
-                case .negative:
-                    if item.tags.isEmpty { return false }
-                }
-            } else {
-                switch selection.state {
-                case .positive:
-                    if !item.tags.contains(selection.tag) { return false }
-                case .negative:
-                    if item.tags.contains(selection.tag) { return false }
-                }
-            }
-        }
-        return true
-    }
     
     private func getAvailableTagsWithCounts(at level: Int, availableTagsFromItems: Set<String>) -> [(tag: String, count: Int)] {
         let currentSelections = Array(selectedTags.prefix(level))
@@ -716,7 +680,7 @@ struct TagFilterBar: View {
         var filteredItems = availableItems
         if !currentSelections.isEmpty {
             filteredItems = filteredItems.filter { item in
-                matchesSelections(item: item, selections: currentSelections)
+                currentSelections.allMatch(tags: item.tags)
             }
         }
         
