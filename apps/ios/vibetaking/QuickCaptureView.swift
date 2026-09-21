@@ -128,6 +128,7 @@ struct QuickCaptureView: View {
                                 Button(workflow.name, systemImage: workflow.icon) {
                                     enterFocusMode(workflow)
                                 }
+                                .accessibilityIdentifier("focus-workflow-\(workflow.id.uuidString)")
                             }
                         }
                         .disabled(processingWorkflowID != nil)
@@ -464,7 +465,6 @@ struct QuickCaptureView: View {
                     ),
                     isFocused: $isTextEditorFocused,
                     inputSessionResetToken: inputSessionResetToken,
-                    isScrollEnabled: !draftText.isEmpty,
                     font: UIFont.preferredFont(forTextStyle: .body),
                     returnKeyType: isFocusMode ? .send : .default,
                     onReturnKeySubmit: focusedWorkflow.map { workflow in
@@ -743,7 +743,6 @@ struct DraftTextView: UIViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
     let inputSessionResetToken: Int
-    let isScrollEnabled: Bool
     let font: UIFont
     var returnKeyType: UIReturnKeyType = .default
     var onReturnKeySubmit: (() -> Void)?
@@ -760,7 +759,9 @@ struct DraftTextView: UIViewRepresentable {
         textView.accessibilityHint = "内容随输入自动保存"
         textView.accessibilityIdentifier = "draft-editor"
         textView.text = text
-        textView.isScrollEnabled = isScrollEnabled
+        textView.isScrollEnabled = true
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         textView.isEditable = true
         textView.isSelectable = true
         textView.returnKeyType = returnKeyType
@@ -768,13 +769,19 @@ struct DraftTextView: UIViewRepresentable {
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
         return textView
     }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, let height = proposal.height,
+              width.isFinite, height.isFinite else { return nil }
+        // The page owns the viewport; long documents scroll inside it.
+        return CGSize(width: width, height: height)
+    }
     
     func updateUIView(_ uiView: UITextView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.resetInputSessionIfNeeded(on: uiView)
         context.coordinator.syncTextIfNeeded(on: uiView)
         if uiView.font != font { uiView.font = font }
-        if uiView.isScrollEnabled != isScrollEnabled { uiView.isScrollEnabled = isScrollEnabled }
 
         context.coordinator.applyReturnKeyTypeIfNeeded(on: uiView)
 

@@ -50,3 +50,17 @@ make ios-install DEVICE_NAME=KAI
 需要 Xcode、可用的开发签名及 Ruby `xcodeproj` gem。测试工程在临时目录生成，终端打印的 `.xcresult` 路径包含截图和断言结果。脚本只测试已安装的应用，运行前请先完成安装。
 
 覆盖连续三次进出 AI 助手、助手输入框唤起键盘后返回、侧滑返回和记录页返回。检查首页按钮的可点击状态及其位置是否恢复，避免第三方输入法未暴露标准键盘辅助功能节点时误判。测试不发送 AI 消息、不执行工作流，也不修改草稿或记录。
+
+## 长文本粘贴与编辑器布局回归
+
+安装当前代码后，复用 UI runner 运行编辑器检查：
+
+```sh
+./apps/ios/tests/run-navigation-toolbar-checks.sh 'platform=iOS Simulator,name=iPhone 17' DraftEditorLayoutUITests
+```
+
+第二个参数省略时仍只运行原有导航检查；后续参数直接传给 `xcodebuild`，可用 `-only-testing:NavigationChecks/DraftEditorLayoutUITests/testLongPasteKeepsPageBounds` 定向复现。
+
+编辑器检查通过启动参数启用演示数据，修改本地 `Documents/Demo/` 内的测试草稿，不读取或写入真实记录；运行前请勿在演示数据中保留需要保存的草稿。测试结束后终止应用并恢复剪贴板，演示模式启动参数不会改写原有模式偏好。
+
+覆盖系统粘贴菜单、普通与专注模式、多行中文、混合代码、超长单行、已有草稿追加、清空与恢复、重新打开和辅助功能字号。断言正文完整、编辑器边界、标题及按钮位置；滚动到顶部和底部的截图保存在 `.xcresult` 中，需要核对首尾文本是否可见。真机九宫格输入法和从照片复制实况文本的路径还应在设备上复核。

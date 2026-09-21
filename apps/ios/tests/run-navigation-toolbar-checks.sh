@@ -4,17 +4,22 @@ set -euo pipefail
 check_root="$(cd "$(dirname "$0")/.." && pwd)"
 check_dir="${NAVIGATION_CHECK_DIR:-$(mktemp -d /tmp/vibetaking-navigation-checks.XXXXXX)}"
 destination="${1:-platform=iOS,name=KAI}"
+test_class="${2:-NavigationToolbarUITests}"
+case "$test_class" in
+  NavigationToolbarUITests|DraftEditorLayoutUITests) ;;
+  *) printf 'Unknown UI test class: %s\n' "$test_class" >&2; exit 1 ;;
+esac
 mkdir -p "$check_dir"
 
 # A separate runner tests the installed app without changing the shipping project.
-ruby - "$check_root" "$check_dir" <<'RUBY'
+ruby - "$check_root" "$check_dir" "$test_class" <<'RUBY'
 require 'xcodeproj'
-root, output = ARGV
+root, output, test_class = ARGV
 path = File.join(output, 'NavigationChecks.xcodeproj')
 project = Xcodeproj::Project.new(path)
 target = project.new_target(:ui_test_bundle, 'NavigationChecks', :ios, '26.0')
 target.add_file_references([
-  project.main_group.new_file(File.join(root, 'tests/NavigationToolbarUITests.swift'))
+  project.main_group.new_file(File.join(root, "tests/#{test_class}.swift"))
 ])
 target.build_configurations.each do |config|
   config.build_settings.merge!({
@@ -41,4 +46,4 @@ xcodebuild -project "$check_dir/NavigationChecks.xcodeproj" \
   -derivedDataPath "$check_dir/DerivedData" \
   -resultBundlePath "$check_dir/results.xcresult" \
   -allowProvisioningUpdates -parallel-testing-enabled NO \
-  -collect-test-diagnostics never test
+  -collect-test-diagnostics never test "${@:3}"
