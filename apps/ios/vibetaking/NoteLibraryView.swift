@@ -634,6 +634,8 @@ struct NoteLibraryView: View {
 
     private var historyList: some View {
         List {
+            // ForEach already identifies rows by item.id. An explicit `.id` on the row, or a row
+            // body that isn't a single view, makes List build every row before the push starts.
             ForEach(listCache.displayedItems) { item in
                 NoteRowView(
                     item: item,
@@ -648,7 +650,6 @@ struct NoteLibraryView: View {
                     onEdit: { isEditMode = true; selectedNoteIDs.insert(item.id) },
                     onDelete: { noteStore.deleteRecord(item) }
                 )
-                .id(item.id)
             }
         }
         .listStyle(.plain)
@@ -789,7 +790,8 @@ struct NoteRowView: View {
     @State private var showDeleteConfirmation = false
 
     var body: some View {
-        Group {
+        // Keep the row a single view so List can size it lazily; see historyList.
+        VStack(alignment: .leading, spacing: 0) {
             if isEditMode {
                 Button(action: onToggleSelection) {
                     HStack(alignment: .top, spacing: 12) {
