@@ -70,9 +70,9 @@ class AgentChatViewModel {
         case "file_read": "读取文件"
         case "file_write": "保存文件"
         case "memory_write": "记住偏好"
-        case "memory_get": "查找记忆"
-        case "calendar_manage": "处理日历请求"
-        case "reminders_manage": "处理提醒事项请求"
+        case "memory_get": "查看已记住的偏好"
+        case "calendar_manage": "查看或更新日历"
+        case "reminders_manage": "查看或更新提醒事项"
         case "clipboard_access": "访问剪贴板"
         default: "处理任务"
         }

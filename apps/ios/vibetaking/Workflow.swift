@@ -72,7 +72,7 @@ struct Workflow: Identifiable, Codable, Equatable {
     var configurationIssue: String? {
         let enabledNodes = nodes.filter(\.isEnabled)
         guard !enabledNodes.isEmpty else {
-            return "还没有启用的步骤。请添加并启用至少一个步骤，再运行。"
+            return "这个工作流还没有可运行的步骤。添加一个步骤（如“保存记录”）后再运行，草稿已保留。"
         }
         for node in enabledNodes {
             let prompt: String?

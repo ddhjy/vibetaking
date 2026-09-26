@@ -55,7 +55,7 @@ nonisolated struct StoredAgentPart: Codable, Sendable {
         case .toolResult(let id, let name, let content, let isError, let imageData, _):
             var stored = content
             if imageData != nil {
-                stored += "\n[图片结果未持久化]"
+                stored += "\n[图片结果未保存到对话历史]"
             }
             return StoredAgentPart(kind: .toolResult, toolId: id, toolName: name, content: stored, isError: isError)
         case .imageData:

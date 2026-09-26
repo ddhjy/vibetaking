@@ -23,9 +23,9 @@
 		<true/>
 	</dict>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>允许后，AI 助手可按你的要求查看日程、查找空闲时间或创建日程。你可以在随心记的设备权限设置中限制访问。</string>
+	<string>允许后，AI 助手可按你的要求查看日程、查找空闲时间或创建日程。可随时在随心记“设置 → AI 助手 → 设备权限”中更改。</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>允许后，AI 助手可按你的要求查看日程、查找空闲时间或创建日程。你可以在随心记的设备权限设置中限制访问。</string>
+	<string>允许后，AI 助手可按你的要求查看日程、查找空闲时间或创建日程。可随时在随心记“设置 → AI 助手 → 设备权限”中更改。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>允许后，可发现同一网络中的 Mac，并把工作流处理后的文本发送到 Mac 上的随心记。</string>
 	<key>NSBonjourServices</key>
@@ -33,9 +33,9 @@
 		<string>_vibetaking._tcp</string>
 	</array>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>允许后，AI 助手可按你的要求查看、创建或完成提醒事项。你可以在随心记的设备权限设置中限制访问。</string>
+	<string>允许后，AI 助手可按你的要求查看、创建或完成提醒事项。可随时在随心记“设置 → AI 助手 → 设备权限”中更改。</string>
 	<key>NSRemindersUsageDescription</key>
-	<string>允许后，AI 助手可按你的要求查看、创建或完成提醒事项。你可以在随心记的设备权限设置中限制访问。</string>
+	<string>允许后，AI 助手可按你的要求查看、创建或完成提醒事项。可随时在随心记“设置 → AI 助手 → 设备权限”中更改。</string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
 		<key>iCloud.cn.1pointech.vibetaking</key>

@@ -769,7 +769,7 @@ struct EditNodeSheet: View {
                     } header: {
                         Text("改写要求")
                     } footer: {
-                        Text("例如：整理成三条要点，保留人名和日期。请先填写要求，再运行工作流。")
+                        Text("例如：整理成三条要点，保留人名和日期。")
                     }
                 }
 

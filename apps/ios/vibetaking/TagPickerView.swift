@@ -177,7 +177,7 @@ struct TagPickerView: View {
                     TagRecommendationStatus(isLoading: isRecommendingTags, message: recommendationMessage)
                 } footer: {
                     if !displayedTags.isEmpty {
-                        Text("已选择 \(selectedTagCount) 个标签，关闭时应用到这条记录。")
+                        Text("已选择 \(selectedTagCount) 个标签，关闭后生效。")
                     }
                 }
             }
@@ -491,7 +491,7 @@ struct TagCreateSheet: View {
                             .accessibilityLabel("标签名称")
                     }
                 } footer: {
-                    Text("创建后自动选中，关闭标签页时应用到记录。")
+                    Text("创建后会自动选中。")
                 }
             }
             .navigationTitle("新建标签")
@@ -902,7 +902,7 @@ struct BatchTagPickerView: View {
                             }
                         }
                     } footer: {
-                        Text("关闭时，更改会应用于所选的 \(itemIds.count) 条记录。减号表示部分记录已有此标签；点按可为全部所选记录添加。")
+                        Text("关闭时，更改会应用于所选的 \(itemIds.count) 条记录。减号表示部分记录已有此标签；轻点可为全部所选记录添加。")
                     }
                 }
             }

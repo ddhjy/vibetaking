@@ -116,7 +116,7 @@ struct OffloadPermissionSettingsView: View {
                     .pickerStyle(.navigationLink)
                 }
             } footer: {
-                Text("新对话首次访问时会征求同意。选择“始终允许”可跳过确认，“不允许”则阻止访问。系统日历和提醒事项权限需在系统设置中单独开启。")
+                Text("“每次对话首次询问”：每段新对话第一次访问时先问你。“始终允许”：不再询问。“不允许”：助手无法访问。日历和提醒事项还需在 iPhone“设置”中允许随心记访问。")
             }
         }
         .navigationTitle("设备权限")

@@ -480,11 +480,11 @@ struct QuickCaptureView: View {
             // Wait for the first load so the hint doesn't flash before existing records arrive.
             if !isFocusMode && draftText.isEmpty && noteStore.hasLoadedNotes && !noteStore.hasSavedItems {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("草稿随输入自动保存。添加“保存记录”步骤后，就能在记录列表中回顾。")
+                    Text("草稿随写随存，不会丢。给工作流加上“保存记录”步骤，写完点一下就能存进记录列表。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("添加保存步骤") { isWorkflowSettingsPresented = true }
+                    Button("设置工作流") { isWorkflowSettingsPresented = true }
                         .font(.subheadline)
                         .frame(minHeight: 44)
                 }
@@ -693,7 +693,7 @@ struct QuickCaptureView: View {
                     noteStore.addRecord(result.finalText, tags: result.tags)
                 }
             }
-            showStatus(result.didCopyToClipboard ? "“\(workflow.name)”已完成，文本已复制到剪贴板。" : "“\(workflow.name)”已完成。")
+            showStatus(completionMessage(for: workflow, result: result))
             return true
         } catch {
             workflowErrorTitle = "“\(workflow.name)”未完成"
@@ -703,13 +703,23 @@ struct QuickCaptureView: View {
             }
             workflowErrorContext = draftText == input ? "原文已恢复到输入框。" : ""
             if workflowManager.currentNodeIndex > 0 {
-                workflowErrorContext += "前面的步骤可能已完成，请检查结果后再运行。"
+                let completed = workflowManager.currentNodeIndex
+                workflowErrorContext += "停在第 \(completed + 1) 步。前 \(completed) 步已执行（如复制、发送），重新运行前请先确认，以免重复。"
             }
             showWorkflowError = true
             return false
         }
     }
     
+    private func completionMessage(for workflow: Workflow, result: WorkflowExecutionResult) -> String {
+        switch (result.shouldSave, result.didCopyToClipboard) {
+        case (true, true): return "已保存为记录，并复制到剪贴板。"
+        case (true, false): return "已保存为记录。"
+        case (false, true): return "“\(workflow.name)”已完成，结果已复制到剪贴板。"
+        case (false, false): return "“\(workflow.name)”已完成。"
+        }
+    }
+
     private func performSave(text: String, tags: [String]) {
         noteStore.updateDraftText(text)
         noteStore.replaceDraftTags(tags)

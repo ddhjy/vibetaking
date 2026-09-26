@@ -89,15 +89,15 @@ private enum LaunchAtLoginError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .libraryDirectoryUnavailable:
-            return "无法设置登录启动，请重启随心记后再试。"
+            return "暂时无法访问登录项设置。请重启随心记后再试。"
         case .bundlePathUnavailable:
             return "请先将随心记移到“应用程序”文件夹后再开启。"
         case .invalidConfiguration:
-            return "登录启动设置失败，请重启随心记后再试。"
+            return "登录项配置未能生成。请重启随心记后再试。"
         case .writeFailed:
-            return "无法开启登录启动，请确认磁盘有足够空间后再试。"
+            return "未能开启。请确认磁盘有可用空间后再试。"
         case .removeFailed:
-            return "无法关闭登录启动，请稍后再试。"
+            return "未能关闭。请稍后再试。"
         }
     }
 
@@ -106,7 +106,7 @@ private enum LaunchAtLoginError: LocalizedError {
         case .libraryDirectoryUnavailable, .bundlePathUnavailable, .invalidConfiguration:
             return nil
         case .writeFailed, .removeFailed:
-            return "如果问题持续出现，请尝试重新安装随心记。"
+            return "如果仍然失败，请重新安装随心记。"
         }
     }
 }
@@ -205,7 +205,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         historyItem = makeMenuItem(
-            title: "查看历史记录",
+            title: "接收历史",
             action: #selector(showHistoryWindow(_:)),
             symbolName: "clock.arrow.circlepath"
         )
@@ -337,7 +337,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 accessibilityDescription: "已授权"
             )
         } else {
-            accessibilityItem.title = "辅助功能：未授权"
+            accessibilityItem.title = "开启辅助功能权限"
             applyMenuItemImage(
                 accessibilityItem,
                 systemSymbolName: "exclamationmark.triangle.fill",
@@ -570,7 +570,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let localizedError = error as? LocalizedError
 
         alert.alertStyle = .warning
-        alert.messageText = "无法更改登录启动"
+        alert.messageText = "“登录时启动”未能更改"
         alert.informativeText = localizedError?.errorDescription ?? error.localizedDescription
 
         if let recoverySuggestion = localizedError?.recoverySuggestion, !recoverySuggestion.isEmpty {
@@ -841,13 +841,13 @@ private final class SettingsViewController: NSViewController {
         launchAtLoginSwitch.target = self
         launchAtLoginSwitch.action = #selector(handleLaunchAtLoginChanged)
 
-        let historyButton = Self.makeActionButton(title: "查看记录")
+        let historyButton = Self.makeActionButton(title: "查看")
         historyButton.target = self
         historyButton.action = #selector(handleShowHistory)
 
         let behaviorCard = Self.makeCard(rows: [
             makeRow(title: "登录时启动", detail: Self.makeHintLabel("开机登录后自动在后台启动"), accessory: launchAtLoginSwitch),
-            makeRow(title: "历史记录", detail: Self.makeHintLabel("最近 100 条接收的文本"), accessory: historyButton)
+            makeRow(title: "接收历史", detail: Self.makeHintLabel("最近 100 条收到的文本"), accessory: historyButton)
         ])
 
         let accessibilityButton = Self.makeActionButton(title: "打开系统设置")
@@ -1034,7 +1034,7 @@ private final class DraftHistoryWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "历史记录"
+        window.title = "接收历史"
         window.contentViewController = historyViewController
         window.isReleasedWhenClosed = false
         window.center()
@@ -1052,11 +1052,11 @@ private final class DraftHistoryWindowController: NSWindowController {
 }
 
 private final class DraftHistoryViewController: NSViewController {
-    private let titleLabel = NSTextField(labelWithString: "历史记录")
-    private let hintLabel = NSTextField(labelWithString: "显示最近 100 条接收的文本，选中即可复制。")
+    private let titleLabel = NSTextField(labelWithString: "接收历史")
+    private let hintLabel = NSTextField(labelWithString: "最近 100 条收到的文本，选中即可复制。")
     private let textView = NSTextView(frame: .zero)
     private let scrollView = NSScrollView()
-    private let placeholderLabel = NSTextField(labelWithString: "还没有记录。在 iPhone 上选择这台 Mac 并发送文字，记录就会出现在这里。")
+    private let placeholderLabel = NSTextField(labelWithString: "还没有收到文本。在 iPhone 工作流的发送步骤中选择这台 Mac，发送后会显示在这里。")
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 420))

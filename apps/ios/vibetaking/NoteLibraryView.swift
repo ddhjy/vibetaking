@@ -598,7 +598,7 @@ struct NoteLibraryView: View {
         } description: {
             Text(noteStore.isUsingLocalFallback
                  ? "可以先在本机记录。要查看 iCloud 中的记录，请确认已登录 Apple 账户并开启 iCloud 云盘，再返回此页。"
-                 : "草稿与已保存的记录分开存放。写好后，运行含“保存记录”步骤的工作流，就能在这里回顾。")
+                 : "写好草稿后，运行带“保存记录”步骤的工作流，内容就会出现在这里。")
         } actions: {
             Button("开始记录") { dismiss() }.buttonStyle(.borderedProminent)
             Button("从文件导入", systemImage: "square.and.arrow.down") { showImportPicker = true }
