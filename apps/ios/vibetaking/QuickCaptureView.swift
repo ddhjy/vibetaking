@@ -41,6 +41,7 @@ struct QuickCaptureView: View {
     @State private var inputSessionResetToken = 0
 
     @AppStorage("focusedWorkflowID", store: AppDefaults.current) private var focusedWorkflowIDRaw: String = ""
+    @AppStorage(AppDefaults.expertModeKey, store: AppDefaults.current) private var isExpertMode = false
     /// 长按切换专注模式后，吞掉同一次按压在松手时触发的 Button 点击。
     @State private var suppressNextWorkflowTap = false
     
@@ -504,8 +505,12 @@ struct QuickCaptureView: View {
 
     private func showStatus(_ message: String) {
         statusMessageTask?.cancel()
-        statusMessage = message
         UIAccessibility.post(notification: .announcement, argument: message)
+        guard !isExpertMode else {
+            statusMessage = nil
+            return
+        }
+        statusMessage = message
         statusMessageTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }

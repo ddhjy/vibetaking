@@ -59,6 +59,7 @@ struct NoteLibraryView: View {
     @State private var listProjectionID = UUID()
     @State private var listCache = NoteListCache()
     @State private var showBatchCopiedToast = false
+    @AppStorage(AppDefaults.expertModeKey, store: AppDefaults.current) private var isExpertMode = false
     @State private var batchCopiedCount: Int = 0
     @State private var batchCopyToastWorkItem: DispatchWorkItem?
     @State private var isRebuildingCache = false
@@ -705,7 +706,8 @@ struct NoteLibraryView: View {
     private func showBatchCopiedToast(count: Int) {
         batchCopiedCount = count
         UIAccessibility.post(notification: .announcement, argument: "已复制 \(count) 条记录")
-        
+        guard !isExpertMode else { return }
+
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
             showBatchCopiedToast = true
         }

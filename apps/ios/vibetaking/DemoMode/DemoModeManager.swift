@@ -3,6 +3,9 @@ import Foundation
 enum AppDefaults {
     static let demoSuiteName = "cn.1pointech.vibetaking.demo"
 
+    /// 专家模式：操作完成后不再显示“已保存”“已复制”等文字提示，读屏播报保持不变。
+    static let expertModeKey = "expertModeEnabled"
+
     static let demo: UserDefaults = {
         guard let defaults = UserDefaults(suiteName: demoSuiteName) else {
             preconditionFailure("Unable to create demo UserDefaults suite")

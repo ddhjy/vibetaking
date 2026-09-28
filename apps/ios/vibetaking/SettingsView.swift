@@ -167,6 +167,7 @@ struct SettingsView: View {
     @State private var demoMode = DemoModeManager.shared
     @State private var versionTapCount = 0
     @State private var showDemoModeSection = false
+    @AppStorage(AppDefaults.expertModeKey, store: AppDefaults.current) private var isExpertMode = false
     @State private var memoryStore = AgentMemoryStore.shared
     @State private var skillStore = SkillStore.shared
     @State private var models: [AIModel] = []
@@ -329,6 +330,14 @@ struct SettingsView: View {
                     Text("AI 助手")
                 } footer: {
                     Text("开启后，助手会在之后的对话中沿用记下的偏好。技能是可重复使用的任务说明。偏好和技能在 iCloud 可用时随记录同步。")
+                }
+
+                Section {
+                    Toggle("专家模式", isOn: $isExpertMode)
+                } header: {
+                    Text("操作提示")
+                } footer: {
+                    Text("开启后，保存、复制、发送、清除等操作完成时不再显示文字提示。运行进度和出错提醒照常显示。")
                 }
 
                 Section {
