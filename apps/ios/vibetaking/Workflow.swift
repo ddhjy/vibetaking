@@ -6,6 +6,7 @@ enum WorkflowNodeType: String, Codable, CaseIterable {
     case copyToClipboard = "copy"
     case save = "save"
     case httpPost = "http_post"
+    case openURL = "open_url"
 
     var displayName: String {
         switch self {
@@ -14,6 +15,7 @@ enum WorkflowNodeType: String, Codable, CaseIterable {
         case .copyToClipboard: "复制文本"
         case .save: "保存记录"
         case .httpPost: "发送到 Mac 或网址"
+        case .openURL: "打开链接"
         }
     }
 
@@ -24,6 +26,7 @@ enum WorkflowNodeType: String, Codable, CaseIterable {
         case .copyToClipboard: "doc.on.doc"
         case .save: "square.and.arrow.down"
         case .httpPost: "paperplane.circle"
+        case .openURL: "arrow.up.forward.app"
         }
     }
 }
@@ -42,6 +45,8 @@ struct WorkflowNode: Identifiable, Codable, Equatable {
         var httpHost: String?
         var httpPort: Int?
         var httpServiceName: String?
+        /// 打开链接节点的链接模板，`{{text}}` 在运行时替换为当前文本。
+        var urlTemplate: String?
     }
 
     init(id: UUID = UUID(), type: WorkflowNodeType, isEnabled: Bool = true, config: NodeConfig = NodeConfig()) {
@@ -79,6 +84,11 @@ struct Workflow: Identifiable, Codable, Equatable {
             switch node.type {
             case .aiProcess: prompt = node.config.aiPrompt
             case .agentProcess: prompt = node.config.agentPrompt
+            case .openURL:
+                if let issue = WorkflowLinkTemplate.issue(in: node.config.urlTemplate) {
+                    return "“\(node.type.displayName)”步骤：\(issue)草稿已保留。"
+                }
+                continue
             default: continue
             }
             if prompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
@@ -124,6 +134,48 @@ struct Workflow: Identifiable, Codable, Equatable {
         isUnsupportedKind = kind != nil && kind != "manual"
     }
 
+}
+
+// MARK: - 打开链接
+
+/// 打开链接步骤的模板：可以是其他 App 的 deep link（如 `shortcuts://run-shortcut?name=…&input=text&text={{text}}`）或网页地址。
+enum WorkflowLinkTemplate {
+    static let textPlaceholder = "{{text}}"
+
+    /// 只保留 RFC 3986 的非保留字符，文本放进查询参数、路径或片段都不会改变链接结构。
+    private static let textAllowedCharacters = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    )
+
+    /// 模板本身只编码 URL 中不合法的字符（中文、空格等），保留分隔符和用户已写好的 `%XX`。
+    private static let templateAllowedCharacters = textAllowedCharacters
+        .union(CharacterSet(charactersIn: ":/?#[]@!$&'()*+,;=%"))
+
+    /// 把文本编码后填入模板。模板为空、缺少 scheme 或替换后不是合法链接时返回 nil。
+    static func url(template: String?, text: String) -> URL? {
+        let trimmed = template?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        // 先让模板合法再填入文本；否则 URL(string:) 遇到中文会整串重新编码，把已编码的文本再编码一次。
+        let encodedText = text.addingPercentEncoding(withAllowedCharacters: textAllowedCharacters) ?? ""
+        let filled = trimmed
+            .components(separatedBy: textPlaceholder)
+            .map { $0.addingPercentEncoding(withAllowedCharacters: templateAllowedCharacters) ?? $0 }
+            .joined(separator: encodedText)
+        guard let url = URL(string: filled), let scheme = url.scheme, !scheme.isEmpty else { return nil }
+        return url
+    }
+
+    /// 编辑页和运行前校验共用的提示；nil 表示模板可用。
+    static func issue(in template: String?) -> String? {
+        let trimmed = template?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            return "请先填写要打开的链接。"
+        }
+        if url(template: trimmed, text: "示例") == nil {
+            return "链接需要以 scheme 开头，例如 shortcuts:// 或 https://。"
+        }
+        return nil
+    }
 }
 
 // MARK: - 内置工作流

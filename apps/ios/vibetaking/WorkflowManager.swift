@@ -322,7 +322,15 @@ class WorkflowManager {
                     UIPasteboard.general.string = textToCopy
                 }
                 didCopy = true
-                
+
+            case .openURL:
+                guard let url = WorkflowLinkTemplate.url(template: node.config.urlTemplate, text: currentText) else {
+                    throw NSError(domain: "WorkflowManager", code: -5, userInfo: [NSLocalizedDescriptionKey: "链接无法使用。请检查“打开链接”步骤，确保以 shortcuts:// 或 https:// 这类 scheme 开头。"])
+                }
+                guard await UIApplication.shared.open(url) else {
+                    throw NSError(domain: "WorkflowManager", code: -6, userInfo: [NSLocalizedDescriptionKey: "没有 App 能打开这个链接。请确认对应的 App 已安装，并检查“打开链接”步骤中的链接。"])
+                }
+
             case .save:
                 shouldSave = true
             }

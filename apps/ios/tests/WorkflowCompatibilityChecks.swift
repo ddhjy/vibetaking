@@ -139,6 +139,29 @@ struct WorkflowCompatibilityChecks {
               Workflow(nodes: [WorkflowNode(type: .aiProcess, config: .init(aiPrompt: "摘要")),
                                WorkflowNode(type: .save)]).configurationIssue == nil)
 
+        // Open-link steps fill the current text into a deep link template.
+        let shortcut = "shortcuts://run-shortcut?name=记账&input=text&text={{text}}"
+        let opened = WorkflowLinkTemplate.url(template: shortcut, text: "午饭 32 元 & 咖啡=18#票")
+        check("the text is encoded so it cannot change the link structure",
+              opened.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems?
+                  .first(where: { $0.name == "text" })?.value == "午饭 32 元 & 咖啡=18#票"
+              && opened?.scheme == "shortcuts" && opened?.fragment == nil)
+        check("a template without the placeholder opens as is",
+              WorkflowLinkTemplate.url(template: " obsidian://new ", text: "x")?.absoluteString == "obsidian://new")
+        check("empty or scheme-less templates are rejected",
+              WorkflowLinkTemplate.url(template: "  ", text: "x") == nil
+              && WorkflowLinkTemplate.url(template: "run-shortcut?text={{text}}", text: "x") == nil)
+        check("an open-link step without a usable link reports an issue",
+              Workflow(nodes: [WorkflowNode(type: .openURL)]).configurationIssue != nil
+              && Workflow(nodes: [WorkflowNode(type: .openURL, config: .init(urlTemplate: "no scheme"))]).configurationIssue != nil
+              && Workflow(nodes: [WorkflowNode(type: .openURL, config: .init(urlTemplate: shortcut))]).configurationIssue == nil)
+        let linkWorkflow = Workflow(nodes: [WorkflowNode(type: .openURL, config: .init(urlTemplate: shortcut))])
+        let linkEncoded = try JSONEncoder().encode([linkWorkflow])
+        let linkReread = try JSONDecoder().decode([Workflow].self, from: linkEncoded)
+        check("open-link steps are stored as open_url and round trip",
+              linkReread == [linkWorkflow]
+              && String(decoding: linkEncoded, as: UTF8.self).contains("\"open_url\""))
+
         // Built-in workflows are recognised by fixed IDs. Changing either ID would make every
         // installed copy look custom and get a duplicate appended on the next launch.
         check("built-in IDs are pinned",

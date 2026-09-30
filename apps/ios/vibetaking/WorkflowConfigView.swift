@@ -656,6 +656,7 @@ struct NodeRowView: View {
                             .foregroundStyle(Color.primary)
                         if let detail = nodeDetail {
                             Text(detail).font(.subheadline).foregroundStyle(Color.secondary).lineLimit(2)
+                                .multilineTextAlignment(.leading)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -691,6 +692,10 @@ struct NodeRowView: View {
 
         if node.type == .agentProcess, let prompt = node.config.agentPrompt, !prompt.isEmpty {
             return prompt
+        }
+
+        if node.type == .openURL, let template = node.config.urlTemplate, !template.isEmpty {
+            return template
         }
 
         if node.type == .httpPost {
@@ -758,6 +763,7 @@ struct EditNodeSheet: View {
     @State private var agentPrompt: String = ""
     @State private var httpHost: String = ""
     @State private var httpPort: String = ""
+    @State private var urlTemplate: String = ""
     @State private var boundServiceName: String?
     @State private var deviceResolutionTask: Task<Void, Never>?
     @State private var isResolvingDevice = false
@@ -774,6 +780,9 @@ struct EditNodeSheet: View {
         }
         if node.type == .agentProcess {
             return !agentPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if node.type == .openURL {
+            return WorkflowLinkTemplate.issue(in: urlTemplate) == nil
         }
         guard node.type == .httpPost, boundServiceName == nil else { return true }
         guard let port = Int(httpPort.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
@@ -811,6 +820,30 @@ struct EditNodeSheet: View {
                         Text("任务指令")
                     } footer: {
                         Text("例如：查找与这段文字相关的记录，整理成三条要点。助手可使用记录和已授权的设备功能；最终文本交给下一步。")
+                    }
+                }
+
+                if node.type == .openURL {
+                    Section {
+                        TextField("例如：shortcuts://run-shortcut?name=记账&input=text&text={{text}}", text: $urlTemplate, axis: .vertical)
+                            .lineLimit(2...6)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                            .accessibilityLabel("链接")
+                        Button("插入当前文本 \(WorkflowLinkTemplate.textPlaceholder)") {
+                            urlTemplate += WorkflowLinkTemplate.textPlaceholder
+                        }
+                        .frame(minHeight: 44)
+                    } header: {
+                        Text("链接")
+                    } footer: {
+                        if !urlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                           let issue = WorkflowLinkTemplate.issue(in: urlTemplate) {
+                            Text(issue)
+                        } else {
+                            Text("\(WorkflowLinkTemplate.textPlaceholder) 会替换成当前文本并自动编码。打开后会离开随心记，建议放在最后一步；“保存记录”不受影响。")
+                        }
                     }
                 }
 
@@ -894,6 +927,7 @@ struct EditNodeSheet: View {
                 agentPrompt = node.config.agentPrompt ?? ""
                 httpHost = node.config.httpHost ?? "localhost"
                 httpPort = "\(node.config.httpPort ?? VibetakingBonjour.defaultPort)"
+                urlTemplate = node.config.urlTemplate ?? ""
                 boundServiceName = node.config.httpServiceName
             }
         }
@@ -908,6 +942,8 @@ struct EditNodeSheet: View {
         updated.config.httpHost = httpHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : httpHost.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.config.httpPort = Int(httpPort.trimmingCharacters(in: .whitespacesAndNewlines))
         updated.config.httpServiceName = boundServiceName
+        let trimmedTemplate = urlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.config.urlTemplate = trimmedTemplate.isEmpty ? nil : trimmedTemplate
         workflowManager.updateNode(updated)
         dismiss()
     }
@@ -1205,6 +1241,7 @@ private extension WorkflowNodeType {
         case .copyToClipboard: "将当前文本复制到系统剪贴板，供其他 App 粘贴。"
         case .save: "全部步骤完成后，将最终文本和草稿标签保存为一条记录。"
         case .httpPost: "将文本发送到 Mac 接收端或指定 HTTP 地址。草稿为空时运行，会发送回车指令。"
+        case .openURL: "把当前文本填入链接并打开，可跳转到其他 App 的 deep link（如快捷指令）或网页。"
         }
     }
 }
