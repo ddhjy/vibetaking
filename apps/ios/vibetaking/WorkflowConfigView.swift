@@ -65,6 +65,7 @@ struct WorkflowConfigView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var workflowToDelete: Workflow?
+    @State private var workflowToRestore: Workflow?
     @State private var nodeOffsetsToDelete = IndexSet()
     @State private var confirmNodeDeletion = false
 
@@ -103,6 +104,16 @@ struct WorkflowConfigView: View {
             Button("保留步骤", role: .cancel) { nodeOffsetsToDelete = [] }
         } message: {
             Text("删除后无法撤销。此工作流将不再执行这些步骤，其他步骤保持不变。")
+        }
+        .alert(item: $workflowToRestore) { workflow in
+            Alert(
+                title: Text("将“\(displayName(for: workflow))”恢复默认？"),
+                message: Text("名称、图标和步骤会恢复为初始设置，你添加或修改的步骤将被移除。是否显示在主页和已绑定的 Mac 保持不变。"),
+                primaryButton: .destructive(Text("恢复默认")) {
+                    workflowManager.restoreBuiltInWorkflow(workflow.id)
+                },
+                secondaryButton: .cancel(Text("保留更改"))
+            )
         }
         .sheet(item: $presentation) { item in
             presentationView(for: item)
@@ -324,6 +335,13 @@ struct WorkflowConfigView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if workflow.isBuiltIn {
+                Text("内置工作流不能删除。可以重命名、更换图标、调整步骤，或从主页隐藏；改动后可在“工作流操作”里恢复默认。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Menu { workflowContextMenu(for: workflow) } label: {
                 Label("工作流操作", systemImage: "ellipsis.circle")
                     .frame(minHeight: 44)
@@ -415,6 +433,16 @@ struct WorkflowConfigView: View {
             }
         }
 
+        if workflow.isBuiltIn {
+            Divider()
+            Button(role: .destructive) {
+                workflowToRestore = workflow
+            } label: {
+                Label("恢复默认", systemImage: "arrow.counterclockwise")
+            }
+            .disabled(!workflow.canRestoreDefault)
+        }
+
         if workflowManager.canDeleteWorkflow(workflow.id) {
             Divider()
             Button(role: .destructive) {
@@ -479,7 +507,7 @@ struct WorkflowConfigView: View {
     }
 
     private func addWorkflow() {
-        let count = workflowManager.workflows.count + 1
+        let count = workflowManager.workflows.filter { !$0.isBuiltIn }.count + 1
         let workflow = Workflow(name: "工作流 \(count)")
         workflowManager.addWorkflow(workflow)
         selectWorkflowForEditing(workflow.id)

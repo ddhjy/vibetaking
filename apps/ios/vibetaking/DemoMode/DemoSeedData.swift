@@ -4,8 +4,6 @@ enum DemoSeedData {
     static let polishWorkflowID = UUID(uuidString: "6a1c0d2e-4b73-4f1a-9d88-2f0c6e1a7b10")!
     static let inboxWorkflowID = UUID(uuidString: "2f8e91aa-0c44-4d6b-8a11-9c3e5d7f2012")!
     static let archiveWorkflowID = UUID(uuidString: "9d4b22c1-71ae-4e08-bf55-18a0c3d94670")!
-    static let saveWorkflowID = UUID(uuidString: "c0b17e54-3a29-4f80-91dd-6e4a8b2c1357")!
-    static let macWorkflowID = UUID(uuidString: "e7a5d130-8f2c-4b19-a063-5d1c9e84b2aa")!
     static let sessionID = UUID(uuidString: "3c9f1d80-6a2e-4b47-91c0-0d8e5a7b4f21")!
 
     static func seed(into rootURL: URL, defaults: UserDefaults) {
@@ -364,30 +362,9 @@ enum DemoSeedData {
                     WorkflowNode(type: .save)
                 ]
             ),
-            Workflow(
-                id: saveWorkflowID,
-                name: "快速保存",
-                icon: "square.and.arrow.down",
-                isOpen: false,
-                nodes: [
-                    WorkflowNode(type: .save)
-                ]
-            ),
-            Workflow(
-                id: macWorkflowID,
-                name: "发到 Mac",
-                icon: "laptopcomputer",
-                isOpen: false,
-                nodes: [
-                    WorkflowNode(
-                        type: .httpPost,
-                        config: WorkflowNode.NodeConfig(
-                            httpHost: "localhost",
-                            httpPort: VibetakingBonjour.defaultPort
-                        )
-                    )
-                ]
-            )
+            // 内置工作流沿用固定 ID，加载时不会再补一份；演示里收起它们，让自定义工作流占据主页。
+            Workflow.builtInSave(isOpen: false),
+            Workflow.builtInSend()
         ]
 
         if let data = try? JSONEncoder().encode(workflows) {

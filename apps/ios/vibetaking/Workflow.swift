@@ -125,3 +125,69 @@ struct Workflow: Identifiable, Codable, Equatable {
     }
 
 }
+
+// MARK: - 内置工作流
+
+extension Workflow {
+    /// 内置工作流靠固定 ID 识别，不新增存储字段：旧版本、导出包和演示数据都按普通工作流读写它们。
+    /// 这两个 ID 一旦发布就不能再改，否则已安装用户的内置工作流会被当成自定义的、再补一份。
+    static let builtInSaveID = UUID(uuidString: "C4E8EE3B-0068-4C1C-8FFD-5CAB96DAAD20")!
+    static let builtInSendID = UUID(uuidString: "71E00288-D5B5-4DEE-9402-78716C4E5266")!
+
+    /// 内置工作流随应用存在，不能删除；名称、图标、步骤和是否显示在主页仍由用户决定。
+    var isBuiltIn: Bool {
+        id == Self.builtInSaveID || id == Self.builtInSendID
+    }
+
+    /// 新用户开箱即用的保存按钮，默认显示在主页。
+    static func builtInSave(isOpen: Bool = true) -> Workflow {
+        Workflow(
+            id: builtInSaveID,
+            name: "保存记录",
+            icon: "square.and.arrow.down",
+            isOpen: isOpen,
+            nodes: [WorkflowNode(type: .save)]
+        )
+    }
+
+    /// 发送到 Mac 需要先绑定设备，默认从主页隐藏，避免新用户误触后看到连接错误。
+    static func builtInSend(isOpen: Bool = false) -> Workflow {
+        Workflow(
+            id: builtInSendID,
+            name: "发送到 Mac",
+            icon: "laptopcomputer",
+            isOpen: isOpen,
+            nodes: [WorkflowNode(type: .httpPost)]
+        )
+    }
+
+    /// 按主页与设置页里的固定顺序返回全部内置工作流。
+    static func builtIns() -> [Workflow] {
+        [builtInSave(), builtInSend()]
+    }
+
+    /// 恢复默认后的样子：名称、图标和步骤回到出厂状态。是否显示在主页和已绑定的 Mac 属于使用设置，
+    /// 保持不变，免得恢复后按钮从主页消失或要重新配对。不是内置工作流时返回 nil。
+    func restoredToDefault() -> Workflow? {
+        guard var restored = Self.builtIns().first(where: { $0.id == id }) else { return nil }
+        restored.isOpen = isOpen
+        if let connection = nodes.first(where: { $0.type == .httpPost })?.config {
+            for index in restored.nodes.indices where restored.nodes[index].type == .httpPost {
+                restored.nodes[index].config.httpHost = connection.httpHost
+                restored.nodes[index].config.httpPort = connection.httpPort
+                restored.nodes[index].config.httpServiceName = connection.httpServiceName
+            }
+        }
+        return restored
+    }
+
+    /// 内置工作流已被改过，可以恢复默认。步骤按内容比较，不看每次新建都会变的步骤 ID。
+    var canRestoreDefault: Bool {
+        guard let restored = restoredToDefault() else { return false }
+        let sameSteps = nodes.count == restored.nodes.count
+            && zip(nodes, restored.nodes).allSatisfy { current, original in
+                current.type == original.type && current.isEnabled == original.isEnabled && current.config == original.config
+            }
+        return name != restored.name || icon != restored.icon || !sameSteps
+    }
+}

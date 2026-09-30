@@ -91,8 +91,7 @@ class WorkflowManager {
     }
     
     func deleteWorkflow(_ id: UUID) {
-        guard workflows.contains(where: { $0.id == id }) else { return }
-        guard workflows.count > 1 else { return }
+        guard canDeleteWorkflow(id) else { return }
 
         workflows.removeAll { $0.id == id }
         if selectedWorkflowID == id, let firstWorkflowId = workflows.first?.id {
@@ -108,6 +107,13 @@ class WorkflowManager {
             ensureOpenWorkflowExists()
             saveWorkflows()
         }
+    }
+
+    func restoreBuiltInWorkflow(_ id: UUID) {
+        guard let idx = workflows.firstIndex(where: { $0.id == id }),
+              let restored = workflows[idx].restoredToDefault() else { return }
+        workflows[idx] = restored
+        saveWorkflows()
     }
 
     func duplicateWorkflow(_ id: UUID) {
@@ -153,9 +159,10 @@ class WorkflowManager {
         workflows.contains(where: { $0.id == id })
     }
 
+    /// 内置工作流始终存在，所以删除自定义工作流后列表不会为空。
     func canDeleteWorkflow(_ id: UUID) -> Bool {
-        guard workflows.contains(where: { $0.id == id }) else { return false }
-        return workflows.count > 1
+        guard let workflow = workflows.first(where: { $0.id == id }) else { return false }
+        return !workflow.isBuiltIn
     }
 
     func moveWorkflows(inOpenState isOpen: Bool, from source: IndexSet, to destination: Int) {
@@ -184,14 +191,14 @@ class WorkflowManager {
 
     private func loadWorkflows() {
         if let data = AppDefaults.current.data(forKey: workflowsStorageKey),
-           let saved = try? JSONDecoder().decode([Workflow].self, from: data),
-           !saved.isEmpty {
+           let saved = try? JSONDecoder().decode([Workflow].self, from: data) {
             workflows = saved
         } else {
-            workflows = [Workflow()]
+            workflows = []
         }
 
         stripRemovedAutoPasteWorkflows()
+        ensureBuiltInWorkflows()
         
         let persistedSelection = AppDefaults.current.string(forKey: selectedWorkflowIDKey)
             ?? AppDefaults.current.string(forKey: legacyActiveWorkflowIDKey)
@@ -234,6 +241,7 @@ class WorkflowManager {
 
         workflows = configuration.items
         stripRemovedAutoPasteWorkflows()
+        ensureBuiltInWorkflows()
         for i in workflows.indices {
             normalizeNodes(&workflows[i].nodes)
         }
@@ -446,9 +454,15 @@ class WorkflowManager {
         defaults.removeObject(forKey: legacyAutoPastePortKey)
 
         workflows.removeAll(where: \.isUnsupportedKind)
-        if workflows.isEmpty {
-            workflows = [Workflow()]
+    }
+
+    /// 补回缺失的内置工作流：首次启动、从没有内置工作流的旧版本升级，或导入旧版导出的配置。
+    /// 已存在的内置工作流保持用户改过的样子；补回的追加在末尾，不打乱主页上已有按钮的位置。
+    private func ensureBuiltInWorkflows() {
+        let missing = Workflow.builtIns().filter { builtIn in
+            !workflows.contains { $0.id == builtIn.id }
         }
+        workflows.append(contentsOf: missing)
     }
 
     private func persistSelectedWorkflowID() {

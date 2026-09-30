@@ -481,18 +481,39 @@ struct QuickCaptureView: View {
             // Wait for the first load so the hint doesn't flash before existing records arrive.
             if !isFocusMode && draftText.isEmpty && noteStore.hasLoadedNotes && !noteStore.hasSavedItems {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("草稿随写随存，不会丢。给工作流加上“保存记录”步骤，写完点一下就能存进记录列表。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("设置工作流") { isWorkflowSettingsPresented = true }
-                        .font(.subheadline)
-                        .frame(minHeight: 44)
+                    newUserHint
                 }
                 .padding(.horizontal, 20)
                 .frame(maxWidth: AppTheme.readingWidth, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
+        }
+    }
+
+    /// 主页上第一个会保存记录的工作流。新用户的提示据此指向具体按钮，而不是先让他们去配置。
+    private var openSavingWorkflow: Workflow? {
+        workflowManager.openWorkflows.first { workflow in
+            workflow.nodes.contains { $0.isEnabled && $0.type == .save }
+        }
+    }
+
+    @ViewBuilder
+    private var newUserHint: some View {
+        if let workflow = openSavingWorkflow {
+            // 工具栏按钮只显示图标，提示里放同一个图标，读屏时改读工作流名称。
+            Text("草稿随写随存，不会丢。写完点下方的 \(Image(systemName: workflow.icon)) 就能存进记录列表。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("草稿随写随存，不会丢。写完点下方的“\(workflow.name)”，就能存进记录列表。")
+        } else {
+            Text("草稿随写随存，不会丢。给工作流加上“保存记录”步骤，写完点一下就能存进记录列表。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("设置工作流") { isWorkflowSettingsPresented = true }
+                .font(.subheadline)
+                .frame(minHeight: 44)
         }
     }
 

@@ -138,5 +138,65 @@ struct WorkflowCompatibilityChecks {
         check("a complete workflow reports no issue",
               Workflow(nodes: [WorkflowNode(type: .aiProcess, config: .init(aiPrompt: "摘要")),
                                WorkflowNode(type: .save)]).configurationIssue == nil)
+
+        // Built-in workflows are recognised by fixed IDs. Changing either ID would make every
+        // installed copy look custom and get a duplicate appended on the next launch.
+        check("built-in IDs are pinned",
+              Workflow.builtInSaveID.uuidString == "C4E8EE3B-0068-4C1C-8FFD-5CAB96DAAD20"
+              && Workflow.builtInSendID.uuidString == "71E00288-D5B5-4DEE-9402-78716C4E5266")
+
+        let builtIns = Workflow.builtIns()
+        check("save comes first and is shown on the home page, send is hidden",
+              builtIns.map(\.id) == [Workflow.builtInSaveID, Workflow.builtInSendID]
+              && builtIns[0].isOpen && !builtIns[1].isOpen)
+        check("built-in workflows run without any configuration",
+              builtIns[0].nodes.map(\.type) == [.save] && builtIns[0].configurationIssue == nil
+              && builtIns[1].nodes.map(\.type) == [.httpPost] && builtIns[1].configurationIssue == nil)
+        check("only the fixed IDs count as built-in",
+              builtIns.allSatisfy(\.isBuiltIn) && !manual.isBuiltIn && !Workflow().isBuiltIn
+              && !Workflow(name: builtIns[0].name, icon: builtIns[0].icon, nodes: builtIns[0].nodes).isBuiltIn)
+
+        // Built-in workflows are stored like any other, so an older reader sees plain manual workflows
+        // and a customised copy stays built-in after a round trip.
+        var customised = builtIns[0]
+        customised.name = "存起来"
+        customised.isOpen = false
+        customised.nodes.insert(WorkflowNode(type: .aiProcess, config: .init(aiPrompt: "润色")), at: 0)
+        let rereadBuiltIns = try JSONDecoder().decode([Workflow].self, from: JSONEncoder().encode([customised, builtIns[1]]))
+        check("built-in workflows stay built-in and keep customisations after a round trip",
+              rereadBuiltIns == [customised, builtIns[1]] && rereadBuiltIns.allSatisfy(\.isBuiltIn))
+        let previousReleaseBuiltIns = try JSONDecoder().decode([PreviousReleaseWorkflow].self, from: JSONEncoder().encode(builtIns))
+        check("the previous release reads built-in workflows as ordinary manual workflows",
+              previousReleaseBuiltIns.map(\.kind) == [.manual, .manual]
+              && previousReleaseBuiltIns.map(\.isOpen) == [true, false])
+
+        // Restoring defaults brings back name, icon and steps, but keeps where the button shows
+        // and which Mac is paired, so a reset never hides a button or forces pairing again.
+        check("fresh built-in workflows have nothing to restore, custom ones cannot be restored",
+              builtIns.allSatisfy { !$0.canRestoreDefault } && !manual.canRestoreDefault
+              && manual.restoredToDefault() == nil)
+        let restoredSave = customised.restoredToDefault()
+        check("restoring a customised save workflow resets name and steps but keeps home-page visibility",
+              customised.canRestoreDefault
+              && restoredSave?.id == Workflow.builtInSaveID && restoredSave?.name == "保存记录"
+              && restoredSave?.nodes.map(\.type) == [.save] && restoredSave?.isOpen == false
+              && restoredSave?.canRestoreDefault == false)
+        var pairedSend = Workflow.builtInSend(isOpen: true)
+        pairedSend.nodes[0].config = .init(httpHost: "192.168.1.10", httpPort: 7788, httpServiceName: "KAI 的 Mac")
+        check("pairing a Mac alone does not count as a change",
+              !pairedSend.canRestoreDefault)
+        pairedSend.icon = "paperplane"
+        pairedSend.nodes.insert(WorkflowNode(type: .copyToClipboard), at: 0)
+        let restoredSend = pairedSend.restoredToDefault()
+        check("restoring the send workflow keeps the paired Mac",
+              pairedSend.canRestoreDefault
+              && restoredSend?.icon == "laptopcomputer" && restoredSend?.nodes.map(\.type) == [.httpPost]
+              && restoredSend?.nodes.first?.config.httpServiceName == "KAI 的 Mac"
+              && restoredSend?.nodes.first?.config.httpHost == "192.168.1.10"
+              && restoredSend?.isOpen == true && restoredSend?.canRestoreDefault == false)
+        var disabledStep = builtIns[0]
+        disabledStep.nodes[0].isEnabled = false
+        check("disabling a default step counts as a change",
+              disabledStep.canRestoreDefault)
     }
 }
