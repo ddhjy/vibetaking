@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1F1E4132F1A0001007D8C71 /* LookinServer in Frameworks */ = {isa = PBXBuildFile; productRef = A1F1E4122F1A0001007D8C71 /* LookinServer */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1F1E4132F1A0001007D8C71 /* LookinServer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -81,6 +83,7 @@
 			);
 			name = vibetaking;
 			packageProductDependencies = (
+				A1F1E4122F1A0001007D8C71 /* LookinServer */,
 			);
 			productName = vibetaking;
 			productReference = 0C7A28222F1403B6007D8C71 /* vibetaking.app */;
@@ -112,6 +115,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A1F1E4012F1A0001007D8C71 /* XCRemoteSwiftPackageReference "FLEX" */,
+				A1F1E4112F1A0001007D8C71 /* XCRemoteSwiftPackageReference "LookinServer" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0C7A28232F1403B6007D8C71 /* Products */;
@@ -365,6 +369,14 @@
 				kind = branch;
 			};
 		};
+		A1F1E4112F1A0001007D8C71 /* XCRemoteSwiftPackageReference "LookinServer" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/QMUI/LookinServer";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.8;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -372,6 +384,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A1F1E4012F1A0001007D8C71 /* XCRemoteSwiftPackageReference "FLEX" */;
 			productName = FLEX;
+		};
+		A1F1E4122F1A0001007D8C71 /* LookinServer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1F1E4112F1A0001007D8C71 /* XCRemoteSwiftPackageReference "LookinServer" */;
+			productName = LookinServer;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

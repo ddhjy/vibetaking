@@ -37,6 +37,10 @@ Workflow 显示为主页底部工具栏的按钮，可新建、复制、排序�
 
 在主页输入以「打开调试模式」开头的内容，再点按任意手动流水线按钮，也会打开同一组调试选项。
 
+### Lookin 界面调试
+
+工程通过 SPM 引入 [LookinServer](https://github.com/QMUI/LookinServer)，无需任何代码或入口：Debug 构建启动后自动在本机 `47164` 端口监听，打开 Mac 上的 [Lookin](https://lookin.work) 即可连接模拟器或 USB 连接的真机，查看 3D 视图层级。LookinServer 的源码只在 Debug 配置下编译，Release / Archive 产物中不含 Lookin 代码，上架前无需手动移除依赖。
+
 ### 隐藏演示模式
 
 设置页底部连点版本号 5 次，会显示「演示模式」开关。开启后切换到独立的示例记录与配置（本地 `Documents/Demo/`，不写 iCloud），用于功能演示和 App Store 截图；关闭后立即回到真实数据。演示模式开启期间该开关保持可见。
